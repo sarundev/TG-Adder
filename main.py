@@ -16,10 +16,29 @@ import json
 import uuid
 import hashlib
 import platform
+import runpy
 
 console = Console()
 
-SERVER_URL = "http://127.0.0.1:8000" # CHANGE THIS TO YOUR RAILWAY APP URL ONCE DEPLOYED
+# --- PyInstaller Subprocess Hack ---
+# When frozen, sys.executable is the compiled binary. We intercept calls to run sub-scripts.
+if getattr(sys, 'frozen', False) and len(sys.argv) > 1 and sys.argv[1].endswith('.py'):
+    script_to_run = sys.argv[1]
+    # We must run it natively in the same memory space since we don't have a python.exe
+    sys.argv = [script_to_run] # Mask arguments for the subscript
+    runpy.run_path(script_to_run, run_name="__main__")
+    sys.exit(0)
+
+SERVER_URL = "https://web-production-c4d18.up.railway.app" # Pointing to live Railway server
+
+def get_base_path():
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return base_path
 
 def get_hwid():
     """Generates a unique hardware ID for this device."""
@@ -76,6 +95,8 @@ def verify_license():
 # Define paths to scripts
 SCRIPTS = {
     "Login to Telegram Account": "telegram_login.py",
+    "Check Account Health": "check_account_health.py",
+    "Clean & Organize Accounts": "clean_accounts.py",
     "Export Contacts": "get_contact.py",
     
     "Scrape Public Group Members": "scrape_member_public_group.py",
@@ -124,15 +145,12 @@ def print_header():
     os.system("cls" if os.name == "nt" else "clear")
     
     ascii_art = """
-   ▄▄▄█████▓ █    ██  ██▓  ██████ █    ██  ██▓▄▄▄█████▓▓█████ 
-   ▓  ██▒ ▓▒ ██  ▓██▒▓██▒▒██    ▒ ██  ▓██▒▓██▒▓  ██▒ ▓▒▓█   ▀ 
-   ▒ ▓██░ ▒░▓██  ▒██░▒██▒░ ▓██▄  ▓██  ▒██░▒██▒▒ ▓██░ ▒░▒███   
-   ░ ▓██▓ ░ ▓▓█  ░██░░██░  ▒   ██▒▓▓█  ░██░░██░░ ▓██▓ ░ ▒▓█  ▄ 
-     ▒██▒ ░ ▒▒█████▓ ░██░▒██████▒▒▒▒█████▓ ░██░  ▒██▒ ░ ░▒████▒
-     ▒ ░░   ░▒▓▒ ▒ ▒ ░▓  ▒ ▒▓▒ ▒ ░░▒▓▒ ▒ ▒ ░▓    ▒ ░░   ░░ ▒░ ░
-       ░    ░░▒░ ░ ░  ▒ ░░ ░▒  ░ ░░░▒░ ░ ░  ▒ ░    ░     ░ ░  ░
-     ░       ░░░ ░ ░  ▒ ░░  ░  ░   ░░░ ░ ░  ▒ ░  ░         ░   
-               ░      ░        ░     ░      ░              ░  ░
+ ████████╗ ██████╗      ██████╗  ██████╗ ██████╗ ██████╗ 
+ ╚══██╔══╝██╔════╝     ██╔════╝ ██╔═══██╗██╔══██╗██╔══██╗
+    ██║   ██║  ███╗    ██║  ███╗██║   ██║██║  ██║██║  ██║
+    ██║   ██║   ██║    ██║   ██║██║   ██║██║  ██║██║  ██║
+    ██║   ╚██████╔╝    ╚██████╔╝╚██████╔╝██████╔╝██████╔╝
+    ╚═╝    ╚═════╝      ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ 
     """
     title = Text(ascii_art, style="bold bright_green")
     
@@ -158,6 +176,8 @@ def main_menu():
         choices = [
             questionary.Separator("\n [ ERROR: MODULES NOT FOUND ] " if False else "\n=== [ CORE_IDENTITY ] ==="),
             "Login to Telegram Account",
+            "Check Account Health",
+            "Clean & Organize Accounts",
             "Export Contacts",
             
             questionary.Separator("\n=== [ DATA_EXTRACTION ] ==="),
@@ -206,15 +226,16 @@ def main_menu():
             
         script_file = SCRIPTS.get(action)
         if script_file:
-            if not os.path.exists(script_file):
+            script_path = os.path.join(get_base_path(), script_file)
+            if not os.path.exists(script_path):
                 console.print(f"[bold yellow]FATAL: '{script_file}' corrupted or missing![/bold yellow]")
                 time.sleep(2)
                 continue
                 
             console.print(f"\n[bold green]root@suite:~# ./exec {script_file}[/bold green]\n")
             try:
-                # Use sys.executable to ensure we run in the same venv
-                subprocess.run([sys.executable, script_file])
+                # If frozen, sys.executable calls our own binary, which intercepts the .py argument at the top!
+                subprocess.run([sys.executable, script_path])
             except KeyboardInterrupt:
                 console.print("\n[bold yellow][!] PROCESS INTERRUPTED [!][/bold yellow]")
             except Exception as e:

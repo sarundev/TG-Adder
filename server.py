@@ -1,25 +1,31 @@
 import os
 import re
 import csv
+import json
+import csv
 import random
 import asyncio
 import threading
 from datetime import datetime, timezone
+import io
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from telethon import TelegramClient, events, functions
-from telethon.tl.types import Channel, Chat
-from telethon.tl.functions.channels import InviteToChannelRequest
-from telethon.tl.functions.messages import AddChatUserRequest
+from telethon.tl.types import Channel, Chat, User, InputUser
+from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
+from telethon.tl.functions.messages import AddChatUserRequest, ImportChatInviteRequest
 from telethon.errors import (
     FloodWaitError, 
     UserPrivacyRestrictedError, 
     UserAlreadyParticipantError,
     UserIdInvalidError,
     PeerFloodError,
-    SessionPasswordNeededError
+    SessionPasswordNeededError,
+    ChatWriteForbiddenError,
+    ChatAdminRequiredError
 )
 
 app = FastAPI(title="Telegram Suite API")
@@ -42,6 +48,7 @@ PENDING_CLIENTS = {}
 LOG_BUFFER = []
 SCRAPED_MEMBERS_CACHE = {}
 ACTIVE_LISTENERS = {}
+IS_INVITING = False
 
 def log_msg(msg: str):
     LOG_BUFFER.append(msg)
@@ -79,6 +86,9 @@ class ScrapeRequest(BaseModel):
     account: str
     group_url: str
     keyword: Optional[str] = None
+
+class AccountRequest(BaseModel):
+    account: str
 
 class InviteRequest(BaseModel):
     accounts: List[str]
@@ -331,7 +341,7 @@ async def scrape_group(req: ScrapeRequest):
             
         members = []
         async for user in client.iter_participants(group_entity):
-            if user.bot or user.is_self:
+            if user.bot or user.is_self or user.deleted:
                 continue
             members.append({
                 'id': user.id,
@@ -346,11 +356,98 @@ async def scrape_group(req: ScrapeRequest):
         cache_id = f"members_{identifier}"
         SCRAPED_MEMBERS_CACHE[cache_id] = members
         
-        return {"status": "success", "count": len(members), "cache_id": cache_id, "members": members[:200]} # return preview
+        return {
+            "status": "success",
+            "count": len(members),
+            "cache_id": cache_id
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await client.disconnect()
+
+@app.get("/api/scraper/export/{cache_id}")
+async def export_scraped_csv(cache_id: str):
+    if cache_id not in SCRAPED_MEMBERS_CACHE:
+        raise HTTPException(status_code=404, detail="Cache not found or expired")
+    
+    members = SCRAPED_MEMBERS_CACHE[cache_id]
+    
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["id", "username", "first_name", "last_name", "phone", "is_bot"])
+    writer.writeheader()
+    for member in members:
+        writer.writerow(member)
+        
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]), 
+        media_type="text/csv", 
+        headers={"Content-Disposition": f"attachment; filename={cache_id}.csv"}
+    )
+
+@app.post("/api/scraper/groups")
+async def scrape_my_groups(req: AccountRequest):
+    session_name = req.account
+    session_path = os.path.join(ACCOUNTS_DIR, session_name)
+    client = TelegramClient(session_path, API_ID, API_HASH,
+        device_model="iPhone 13 Pro Max",
+        system_version="15.5",
+        app_version="8.7.1",
+        lang_code="en",
+        system_lang_code="en"
+    )
+    
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            raise HTTPException(status_code=401, detail="Session expired or unauthorized")
+            
+        dialogs = await client.get_dialogs()
+        groups = []
+        for d in dialogs:
+            if d.is_group or d.is_channel:
+                username = getattr(d.entity, 'username', None)
+                link = f"https://t.me/{username}" if username else "Private/No Link"
+                groups.append({
+                    'id': d.id,
+                    'name': d.name or 'Unknown',
+                    'participants_count': getattr(d.entity, 'participants_count', 'Unknown'),
+                    'link': link
+                })
+                
+        cache_id = f"groups_{session_name}"
+        SCRAPED_MEMBERS_CACHE[cache_id] = groups
+        
+        return {
+            "status": "success",
+            "count": len(groups),
+            "cache_id": cache_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await client.disconnect()
+
+@app.get("/api/scraper/export-groups/{cache_id}")
+async def export_groups_csv(cache_id: str):
+    if cache_id not in SCRAPED_MEMBERS_CACHE:
+        raise HTTPException(status_code=404, detail="Cache not found or expired")
+    
+    groups = SCRAPED_MEMBERS_CACHE[cache_id]
+    
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["id", "name", "participants_count", "link"])
+    writer.writeheader()
+    for group in groups:
+        writer.writerow(group)
+        
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]), 
+        media_type="text/csv", 
+        headers={"Content-Disposition": f"attachment; filename={cache_id}.csv"}
+    )
 
 @app.get("/api/logs")
 def get_logs():
@@ -362,10 +459,15 @@ def clear_logs():
     return {"status": "ok"}
 
 # --- Inviter Background Thread Execution ---
-async def add_single_user(client, target_entity, user_id_or_username, session_name):
+async def add_single_user(client, target_entity, user_or_id, session_name):
+    user_label = "Unknown User"
     try:
-        user_entity = await client.get_entity(user_id_or_username)
-        user_label = f"@{user_entity.username}" if user_entity.username else f"ID {user_entity.id}"
+        if isinstance(user_or_id, User):
+            user_entity = user_or_id
+            user_label = f"@{user_entity.username}" if getattr(user_entity, 'username', None) else f"ID {getattr(user_entity, 'id', 'Unknown')}"
+        else:
+            user_entity = await client.get_entity(user_or_id)
+            user_label = f"@{user_entity.username}" if getattr(user_entity, 'username', None) else f"ID {getattr(user_entity, 'id', 'Unknown')}"
         
         if isinstance(target_entity, Channel):
             await client(InviteToChannelRequest(target_entity, [user_entity]))
@@ -385,11 +487,16 @@ async def add_single_user(client, target_entity, user_id_or_username, session_na
     except PeerFloodError:
         log_msg(f"   ❌ [{session_name}] Account has been flagged/restricted by Telegram (PeerFloodError)!")
         return "RESTRICTED"
+    except (ChatWriteForbiddenError, ChatAdminRequiredError) as e:
+        log_msg(f"   ❌ [{session_name}] Permission denied to add to chat. Attempting to bypass by ignoring...")
+        return False
     except FloodWaitError as e:
         log_msg(f"   ⚠️ [{session_name}] Rate limited! Must wait {e.seconds}s.")
         return e.seconds
     except Exception as e:
-        log_msg(f"   ❌ [{session_name}] Failed to add {user_id_or_username}: {e}")
+        # Simplify the printed user label so the logs aren't massive
+        short_label = user_label if isinstance(user_label, str) else "User"
+        log_msg(f"   ❌ [{session_name}] Failed to add {short_label}: {type(e).__name__} - {e}")
     return False
 
 async def invite_task_worker(accounts: List[str], target_group: str, members: List[str], delay: float):
@@ -519,7 +626,7 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
             
         log_msg(f"Scraping members from: {getattr(source_entity, 'title', source_group)}...")
         async for user in primary_client.iter_participants(source_entity):
-            if user.bot or user.is_self:
+            if user.bot or user.is_self or user.deleted:
                 continue
             scraped_users.append(user)
             
@@ -565,6 +672,19 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
                 
             target_entity = None
             dialogs = await client.get_dialogs()
+            
+            # ATTEMPT TO JOIN TARGET GROUP FIRST TO BYPASS WRITE FORBIDDEN
+            is_private_target = 'joinchat/' in target_group or '+' in target_group
+            try:
+                if is_private_target:
+                    match = re.search(r'(?:\+|joinchat/)([a-zA-Z0-9_\-]+)', target_group)
+                    if match:
+                        await client(ImportChatInviteRequest(match.group(1)))
+                else:
+                    await client(JoinChannelRequest(target_id))
+            except Exception:
+                pass # Ignore if already joined or fails
+                
             for d in dialogs:
                 if (d.is_group or d.is_channel) and (str(d.id) == target_id or d.name == target_id or getattr(d.entity, 'username', '') == target_id):
                     target_entity = d.entity
@@ -599,19 +719,87 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
         finally:
             await client.disconnect()
             
-    log_msg(f"\n==========================================")
-    log_msg(f"🎉 GROUP-TO-GROUP BROADCAST COMPLETED")
-    log_msg(f"==========================================")
+        log_msg(f"\n==========================================")
+        log_msg(f"🎉 GROUP-TO-GROUP BROADCAST COMPLETED")
+        log_msg(f"==========================================")
+
+async def run_worker_safe(worker_func, *args):
+    global IS_INVITING
+    IS_INVITING = True
+    try:
+        await worker_func(*args)
+    finally:
+        IS_INVITING = False
 
 @app.post("/api/inviter/invite-group")
-def start_group_invitation_task(req: GroupToGroupInviteRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(group_to_group_invite_worker, req.accounts, req.primary_account, req.source_group, req.target_group, req.delay)
+async def start_group_to_group_inviter(req: GroupToGroupInviteRequest, background_tasks: BackgroundTasks):
+    if IS_INVITING:
+        raise HTTPException(status_code=400, detail="An inviter task is already running in the background. Please wait for it to finish or restart the server.")
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="No accounts specified")
+    if not req.source_group or not req.target_group:
+        raise HTTPException(status_code=400, detail="Source or target group missing")
+        
+    background_tasks.add_task(run_worker_safe, group_to_group_invite_worker, req.accounts, req.primary_account, req.source_group, req.target_group, req.delay)
     return {"status": "started"}
 
 @app.post("/api/inviter/invite")
-def start_invitation_task(req: InviteRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(invite_task_worker, req.accounts, req.target_group, req.members, req.delay)
-    return {"status": "started"}
+async def start_inviter(req: InviteRequest, background_tasks: BackgroundTasks):
+    if IS_INVITING:
+        raise HTTPException(status_code=400, detail="An inviter task is already running in the background. Please wait for it to finish or restart the server.")
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="No accounts specified")
+    if not req.members:
+        raise HTTPException(status_code=400, detail="No members to invite")
+        
+    background_tasks.add_task(
+        run_worker_safe,
+        invite_task_worker,
+        req.accounts,
+        req.target_group,
+        req.members,
+        req.delay
+    )
+    return {"status": "started", "targets": len(req.members), "accounts_used": len(req.accounts)}
+
+@app.post("/api/inviter/invite-csv")
+async def start_inviter_csv(
+    background_tasks: BackgroundTasks,
+    target_group: str = Form(...),
+    accounts: str = Form(...),
+    delay: float = Form(5.0),
+    file: UploadFile = File(...)
+):
+    if IS_INVITING:
+        raise HTTPException(status_code=400, detail="An inviter task is already running in the background. Please wait for it to finish or restart the server.")
+    account_list = json.loads(accounts)
+    
+    if not account_list:
+        raise HTTPException(status_code=400, detail="No accounts specified")
+        
+    contents = await file.read()
+    csv_string = contents.decode('utf-8')
+    csv_reader = csv.DictReader(io.StringIO(csv_string))
+    
+    members = []
+    for row in csv_reader:
+        if row.get("username"):
+            members.append(row["username"])
+        elif row.get("id"):
+            members.append(int(row["id"]))
+            
+    if not members:
+        raise HTTPException(status_code=400, detail="No valid users found in CSV")
+        
+    background_tasks.add_task(
+        run_worker_safe,
+        invite_task_worker,
+        account_list,
+        target_group,
+        members,
+        delay
+    )
+    return {"status": "started", "targets": len(members), "accounts_used": len(account_list)}
 
 @app.on_event("shutdown")
 async def shutdown_event():

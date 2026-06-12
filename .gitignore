@@ -6,3 +6,5 @@ accounts/*.session
 accounts/*.session-journal
 accounts/licenses.json
 .license_token
+build/
+dist/
