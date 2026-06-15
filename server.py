@@ -18,12 +18,28 @@ from pydantic import BaseModel
 from telethon import TelegramClient, events, functions
 from telethon.sessions import SQLiteSession
 import sqlite3
+import importlib.util
+
 try:
+    # Dynamically patch opentele to fix BaseException error before importing
+    spec = importlib.util.find_spec("opentele")
+    if spec and spec.origin:
+        utils_path = os.path.join(os.path.dirname(spec.origin), "utils.py")
+        if os.path.exists(utils_path):
+            with open(utils_path, "r") as f:
+                content = f.read()
+            if 'raise BaseException("err")' in content:
+                content = content.replace('raise BaseException("err")', 'pass')
+                with open(utils_path, "w") as f:
+                    f.write(content)
+
     from opentele.td import TDesktop
     from opentele.api import API, UseCurrentSession
     OPENTELE_AVAILABLE = True
-except ImportError:
+except Exception as e:
+    print(f"Failed to load opentele: {e}")
     OPENTELE_AVAILABLE = False
+
 
 class RobustSQLiteSession(SQLiteSession):
     """SQLiteSession with 30s timeout + WAL mode to prevent 'database is locked' errors."""
