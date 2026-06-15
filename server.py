@@ -255,6 +255,7 @@ class LicenseVerifyRequest(BaseModel):
 class LicenseGenerateRequest(BaseModel):
     admin_key: str
     prefix: str = "TLG"
+    duration: str = "lifetime" # '1_week', '1_month', '2_months', '3_months', '1_year', 'lifetime'
 
 # --- Endpoints ---
 
@@ -284,15 +285,29 @@ def verify_license(req: LicenseVerifyRequest):
         
     license_data = licenses[token]
     
-    # If not claimed yet, bind to this HWID
     if not license_data.get("hwid"):
         license_data["hwid"] = hwid
+        
+        # Start the expiration timer upon first use
+        duration_days = license_data.get("duration_days")
+        if duration_days is not None:
+            from datetime import timedelta
+            expire_date = datetime.now(timezone.utc) + timedelta(days=duration_days)
+            license_data["expires_at"] = expire_date.isoformat()
+            
         save_licenses(licenses)
         return {"status": "success", "detail": "Token bound to device successfully"}
         
     # If already claimed, verify HWID
     if license_data["hwid"] != hwid:
         raise HTTPException(status_code=401, detail="Token is already bound to another device")
+        
+    # Check expiration
+    expires_at_str = license_data.get("expires_at")
+    if expires_at_str:
+        expires_at = datetime.fromisoformat(expires_at_str)
+        if datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(status_code=401, detail="License has expired")
         
     return {"status": "success", "detail": "Token verified"}
 
@@ -305,11 +320,27 @@ def generate_license(req: LicenseGenerateRequest):
     import uuid
     new_token = f"{req.prefix}-{str(uuid.uuid4()).upper()[:8]}-{str(uuid.uuid4()).upper()[:8]}"
     
+    duration_map = {
+        "1_week": 7,
+        "1_month": 30,
+        "2_months": 60,
+        "3_months": 90,
+        "1_year": 365,
+        "lifetime": None
+    }
+    duration_days = duration_map.get(req.duration)
+    
     licenses = load_licenses()
-    licenses[new_token] = {"hwid": None, "created_at": datetime.now(timezone.utc).isoformat()}
+    licenses[new_token] = {
+        "hwid": None, 
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "duration_days": duration_days,
+        "expires_at": None,
+        "duration_label": req.duration
+    }
     save_licenses(licenses)
     
-    return {"status": "success", "token": new_token}
+    return {"status": "success", "token": new_token, "duration": req.duration}
 
 @app.get("/api/license/list")
 def list_licenses(admin_key: str):
@@ -323,6 +354,8 @@ def list_licenses(admin_key: str):
             "hwid":       data.get("hwid"),
             "bound":      data.get("hwid") is not None,
             "created_at": data.get("created_at", ""),
+            "duration":   data.get("duration_label", "lifetime"),
+            "expires_at": data.get("expires_at", "Never")
         })
     return {"count": len(result), "keys": result}
 
