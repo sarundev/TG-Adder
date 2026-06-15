@@ -429,9 +429,8 @@ async def upload_tdata_zip(file: UploadFile = File(...)):
             raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/accounts/login/request")
-
 async def login_request(req: LoginRequest):
-    phone = req.phone.strip()
+    phone = str(req.phone).strip()
     if not phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
         
@@ -461,9 +460,9 @@ async def login_request(req: LoginRequest):
 
 @app.post("/api/accounts/login/confirm")
 async def login_confirm(req: LoginConfirm):
-    phone = req.phone
-    code = req.code.strip()
-    password = req.password.strip() if req.password else None
+    phone = str(req.phone).strip()
+    code = str(req.code).strip()
+    password = str(req.password).strip() if req.password else None
     
     if phone not in PENDING_CLIENTS:
         raise HTTPException(status_code=400, detail="No pending login request for this phone number")
@@ -473,7 +472,7 @@ async def login_confirm(req: LoginConfirm):
     try:
         if not password:
             try:
-                await client.sign_in(phone, code)
+                await client.sign_in(phone=phone, code=code)
             except SessionPasswordNeededError:
                 return {"status": "password_required", "phone": phone}
         else:
