@@ -17,6 +17,7 @@ macholib==1.16.4
 markdown-it-py==4.2.0
 mdurl==0.1.2
 multidict==6.7.1
+opentele==1.15.1
 packaging==26.2
 prompt_toolkit==3.0.52
 propcache==0.5.2
