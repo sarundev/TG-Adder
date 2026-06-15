@@ -7,7 +7,10 @@ import {
 } from 'lucide-react';
 import './index.css';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+// Use relative /api path if running on a production host (not localhost/Vite)
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+  ? (window.location.port === '5173' ? 'http://127.0.0.1:8000/api' : '/api') 
+  : '/api';
 
 // ── Hardware ID generation (browser fingerprint) ──
 async function generateHWID() {

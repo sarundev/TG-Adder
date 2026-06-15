@@ -18,8 +18,12 @@ from pydantic import BaseModel
 from telethon import TelegramClient, events, functions
 from telethon.sessions import SQLiteSession
 import sqlite3
-from opentele.td import TDesktop
-from opentele.api import API, UseCurrentSession
+try:
+    from opentele.td import TDesktop
+    from opentele.api import API, UseCurrentSession
+    OPENTELE_AVAILABLE = True
+except ImportError:
+    OPENTELE_AVAILABLE = False
 
 class RobustSQLiteSession(SQLiteSession):
     """SQLiteSession with 30s timeout + WAL mode to prevent 'database is locked' errors."""
@@ -340,6 +344,9 @@ def delete_account(session_name: str):
 
 @app.post("/api/accounts/upload-tdata-zip")
 async def upload_tdata_zip(file: UploadFile = File(...)):
+    if not OPENTELE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="TData uploading is not supported on this host (opentele missing).")
+        
     if not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Must be a .zip file containing a tdata folder")
     
@@ -1931,6 +1938,29 @@ async def start_warm(req: WarmRequest, background_tasks: BackgroundTasks):
     )
     return {"status": "started", "accounts": len(req.accounts)}
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Serve static files if they exist (for Railway / production)
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+
+if os.path.exists(FRONTEND_DIST):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+    
+    @app.get("/{catchall:path}")
+    def serve_frontend(catchall: str):
+        if catchall.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API route not found")
+        index_path = os.path.join(FRONTEND_DIST, "index.html")
+        file_path = os.path.join(FRONTEND_DIST, catchall)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(index_path)
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # In production/Railway, the PORT env var is usually set. Default to 8000 locally.
+    port = int(os.environ.get("PORT", 8000))
+    host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    uvicorn.run(app, host=host, port=port)
