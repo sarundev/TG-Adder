@@ -1052,8 +1052,10 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
         log_msg(f"   ℹ️ [{session_name}] Already in group: {user_label}")
     except UserIdInvalidError:
         log_msg(f"   ❌ [{session_name}] Invalid user identifier: {user_label}")
-    except (InputUserDeactivatedError, UserKickedError, UserBannedInChannelError):
-        log_msg(f"   ❌ [{session_name}] {user_label} is deactivated, kicked, or banned — skipping.")
+    except (InputUserDeactivatedError, UserKickedError):
+        log_msg(f"   ❌ [{session_name}] {user_label} is deactivated or was kicked from this group — skipping.")
+    except UserBannedInChannelError:
+        log_msg(f"   ❌ [{session_name}] The ACCOUNT is banned from this group, OR {user_label} is banned. (Likely the account is banned).")
     except UsersTooMuchError:
         log_msg(f"   ❌ [{session_name}] Group member limit reached!")
         return "RESTRICTED"
