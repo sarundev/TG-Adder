@@ -246,12 +246,19 @@ function MainApp({ onLogout }) {
 
   // Inviter State
   const [inviteGroup, setInviteGroup] = useState('');
-  const [inviterDelay, setInviterDelay] = useState(5.0);
-  const [csvFile, setCsvFile] = useState(null);
+  const [inviterDelay, setInviterDelay] = useState(15);
+  const [inviterSelectAll, setInviterSelectAll] = useState(false);
   const [inviterAccounts, setInviterAccounts] = useState([]);
-  const [inviterSelectAll, setInviterSelectAll] = useState(true);
+
+  // Join Group State
+  const [joinGroupTarget, setJoinGroupTarget] = useState('');
+  const [joinAccounts, setJoinAccounts] = useState([]);
+  const [joinSelectAll, setJoinSelectAll] = useState(false);
+  const [joinDelay, setJoinDelay] = useState(15);
+  
   const [inviterMode, setInviterMode] = useState('csv'); // 'csv' | 'username'
   const [usernameInput, setUsernameInput] = useState('');
+  const [csvFile, setCsvFile] = useState(null);
 
   // Make Account Strong (Warm) State
   const [warmAccounts, setWarmAccounts] = useState([]);
@@ -478,6 +485,31 @@ function MainApp({ onLogout }) {
     setInviterAccounts(prev => checked ? [...prev, phone] : prev.filter(p => p !== phone));
   };
 
+  // Join Group account toggles
+  const handleJoinToggleAll = (checked) => {
+    setJoinSelectAll(checked);
+    setJoinAccounts(checked ? accounts.map(a => a.phone) : []);
+  };
+  const handleJoinToggleAccount = (phone, checked) => {
+    setJoinAccounts(prev => checked ? [...prev, phone] : prev.filter(p => p !== phone));
+  };
+
+  const handleJoinGroup = async (e) => {
+    e.preventDefault();
+    if (joinAccounts.length === 0) { setErrorMsg('Select at least one account'); return; }
+    if (!joinGroupTarget) { setErrorMsg('Enter target group or channel'); return; }
+    setLoading(true); setErrorMsg('');
+    try {
+      await axios.post(`${API_BASE}/join-group`, {
+        accounts: joinAccounts,
+        target_group: joinGroupTarget,
+        delay: parseFloat(joinDelay)
+      });
+      setActiveTab('Terminal Logs');
+    } catch (err) { setErrorMsg(err.response?.data?.detail || 'Join group failed'); }
+    setLoading(false);
+  };
+
   const handleWarmStart = async (e) => {
     e.preventDefault();
     setLoading(true); setErrorMsg('');
@@ -515,7 +547,7 @@ function MainApp({ onLogout }) {
           <Send size={28} strokeWidth={2.5} /> TeleMaster
         </div>
         <nav>
-          {['Dashboard', 'Add Account', 'Make Account Strong', 'Scraper', 'Scrape & Add', 'Inviter', 'Terminal Logs'].map((item) => (
+          {['Dashboard', 'Add Account', 'Make Account Strong', 'Scraper', 'Join Group', 'Scrape & Add', 'Inviter', 'Terminal Logs'].map((item) => (
             <div 
               key={item} 
               className={`nav-item ${activeTab === item ? 'active' : ''}`}
@@ -525,6 +557,7 @@ function MainApp({ onLogout }) {
               {item === 'Add Account' && <Plus size={20} />}
               {item === 'Make Account Strong' && <Flame size={20} />}
               {item === 'Scraper' && <Database size={20} />}
+              {item === 'Join Group' && <Users size={20} />}
               {item === 'Scrape & Add' && <TrendingUp size={20} />}
               {item === 'Inviter' && <Send size={20} />}
               {item === 'Terminal Logs' && <Terminal size={20} />}
@@ -1133,6 +1166,55 @@ function MainApp({ onLogout }) {
             </form>
           </div>
           </>
+        )}
+
+        {activeTab === 'Join Group' && (
+          <div className="animate-fade-in glass-panel" style={{ padding: '30px', maxWidth: '680px', margin: '0 auto' }}>
+            <h2 style={{ marginBottom: '6px' }}>Mass Join Group/Channel</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '24px' }}>
+              Make multiple accounts join a specific public or private group/channel.
+            </p>
+            {errorMsg && <div style={{ color: 'var(--accent-red)', marginBottom: '15px' }}>{errorMsg}</div>}
+
+            <form onSubmit={handleJoinGroup}>
+              <div className="form-group">
+                <label className="form-label">Target Group or Channel</label>
+                <input 
+                  type="text" className="glass-input" 
+                  placeholder="@username or https://t.me/joinchat/..." 
+                  value={joinGroupTarget} onChange={(e) => setJoinGroupTarget(e.target.value)} required 
+                />
+              </div>
+
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>Select Accounts to Join</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={joinSelectAll} onChange={(e) => handleJoinToggleAll(e.target.checked)} />
+                    Select All
+                  </label>
+                </div>
+                <div className="accounts-list-scrollable" style={{ maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  {accounts.map(a => (
+                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                      <input type="checkbox" checked={joinAccounts.includes(a.phone)} onChange={(e) => handleJoinToggleAccount(a.phone, e.target.checked)} />
+                      <span>{a.phone}</span>
+                    </label>
+                  ))}
+                  {accounts.length === 0 && <div style={{ fontSize: '0.85rem', color: 'gray' }}>No accounts available</div>}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Delay between each account join (seconds)</label>
+                <input type="number" min="1" step="1" className="glass-input" value={joinDelay} onChange={(e) => setJoinDelay(e.target.value)} required />
+              </div>
+
+              <button type="submit" className="glass-button" style={{ width: '100%', marginTop: '10px' }} disabled={loading || joinAccounts.length === 0}>
+                {loading ? 'Starting...' : 'Start Joining'}
+              </button>
+            </form>
+          </div>
         )}
 
         {activeTab === 'Scrape & Add' && (

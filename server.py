@@ -1954,6 +1954,76 @@ async def start_warm(req: WarmRequest, background_tasks: BackgroundTasks):
     )
     return {"status": "started", "accounts": len(req.accounts)}
 
+# ─────────────────────────────────────────────
+#  MASS JOIN GROUP
+# ─────────────────────────────────────────────
+class JoinGroupRequest(BaseModel):
+    accounts: List[str]
+    target_group: str
+    delay: float
+
+async def join_group_worker(accounts: List[str], target_group: str, delay: float):
+    log_msg(f"\n==========================================")
+    log_msg(f"🤝 MASS JOIN TASK STARTED")
+    log_msg(f"Target: {target_group} | Accounts: {len(accounts)} | Delay: {delay}s")
+    log_msg(f"==========================================")
+
+    for session in accounts:
+        session_path = os.path.join(ACCOUNTS_DIR, session)
+        lock = get_session_lock(session)
+        async with lock:
+            try:
+                log_msg(f"🔄 [{session}] Connecting to join {target_group}...")
+                client = TelegramClient(
+                    session_path, API_ID, API_HASH,
+                    device_model="iPhone 13 Pro Max",
+                    system_version="15.5",
+                    app_version="8.7.1",
+                    lang_code="en",
+                    system_lang_code="en"
+                )
+                await client.connect()
+                if not await client.is_user_authorized():
+                    log_msg(f"   ❌ [{session}] Not authorized. Skipping.")
+                    continue
+                
+                target = target_group.strip()
+                if "joinchat/" in target or target.startswith("+") or "t.me/+" in target:
+                    # Private invite link
+                    hash_str = target.split("joinchat/")[-1].split("+")[-1].split("/")[-1].strip()
+                    await client(ImportChatInviteRequest(hash_str))
+                    log_msg(f"   ✅ [{session}] Successfully joined private group.")
+                else:
+                    # Public group/channel
+                    entity = await client.get_entity(target)
+                    await client(JoinChannelRequest(entity))
+                    log_msg(f"   ✅ [{session}] Successfully joined public group/channel.")
+                
+            except FloodWaitError as e:
+                log_msg(f"   ⚠️ [{session}] Flood wait: {e.seconds}s.")
+            except UserAlreadyParticipantError:
+                log_msg(f"   ℹ️ [{session}] Already a member.")
+            except Exception as e:
+                log_msg(f"   ❌ [{session}] Failed to join: {e}")
+            finally:
+                await client.disconnect()
+        
+        await asyncio.sleep(delay)
+
+    log_msg(f"==========================================")
+    log_msg(f"🎉 MASS JOIN TASK COMPLETED")
+    log_msg(f"==========================================")
+
+@app.post("/api/join-group")
+async def start_join_group(req: JoinGroupRequest, background_tasks: BackgroundTasks):
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="Select at least one account")
+    if not req.target_group:
+        raise HTTPException(status_code=400, detail="Target group is required")
+
+    background_tasks.add_task(join_group_worker, req.accounts, req.target_group, req.delay)
+    return {"status": "started", "accounts": len(req.accounts)}
+
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
