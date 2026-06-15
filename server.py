@@ -82,8 +82,8 @@ app.add_middleware(
 )
 
 # ── Configuration ──
-API_ID = 26500753
-API_HASH = "815cc20b134604fbaf8a156ceebba235"
+API_ID = 36597503
+API_HASH = "ce9a6d0c68789ae5234b77aa081acfac"
 ACCOUNTS_DIR = "accounts"
 LOG_FILE = "logs.txt"
 
