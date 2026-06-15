@@ -81,10 +81,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_ID = 36597503
-API_HASH = "ce9a6d0c68789ae5234b77aa081acfac"
+# ── Configuration ──
+API_ID = 26500753
+API_HASH = "815cc20b134604fbaf8a156ceebba235"
 ACCOUNTS_DIR = "accounts"
+LOG_FILE = "logs.txt"
 
+# ── Global Cancellation Flags ──
+GLOBAL_CANCEL_FLAGS = {
+    "inviter": False
+}
+
+os.makedirs(ACCOUNTS_DIR, exist_ok=True)
 # Global states
 PENDING_CLIENTS = {}
 LOG_BUFFER = []
@@ -1072,6 +1080,8 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
     log_msg(f"🚀 INVITATION WEB TASK STARTED")
     log_msg(f"Targets: {len(members)} users | Accounts: {len(accounts)} | Delay: {delay}s")
     log_msg(f"==========================================")
+    
+    GLOBAL_CANCEL_FLAGS["inviter"] = False
 
     target_id = parse_identifier(target_group)
 
@@ -1083,6 +1093,10 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
         assignments[acc].append(user)
         
     for session in accounts:
+        if GLOBAL_CANCEL_FLAGS.get("inviter"):
+            log_msg("🛑 Task was manually cancelled.")
+            break
+            
         targets = assignments[session]
         if not targets:
             continue
@@ -1119,6 +1133,10 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
                     continue
 
             for i, user in enumerate(targets):
+                if GLOBAL_CANCEL_FLAGS.get("inviter"):
+                    log_msg(f"🛑 [{session}] Inviter stopped mid-loop.")
+                    break
+                    
                 res = await add_single_user(client, target_entity, user, session)
                 
                 if res == "RESTRICTED":
@@ -1148,9 +1166,12 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
 async def group_to_group_invite_worker(accounts: List[str], primary_account: str, source_group: str, target_group: str, delay: float):
     log_msg(f"\n==========================================")
     log_msg(f"🚀 GROUP-TO-GROUP BROADCAST STARTED")
-    log_msg(f"Primary Account: {primary_account} | Source Group: {source_group} | Target Group: {target_group}")
+    log_msg(f"Source: {source_group} | Target: {target_group} | Delay: {delay}s")
+    log_msg(f"Accounts: {len(accounts)} (Primary: {primary_account})")
     log_msg(f"==========================================")
-    
+
+    GLOBAL_CANCEL_FLAGS["inviter"] = False
+
     primary_path = os.path.join(ACCOUNTS_DIR, primary_account)
     primary_client = TelegramClient(primary_path, API_ID, API_HASH,
         device_model="iPhone 13 Pro Max",
@@ -1219,6 +1240,10 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
     target_id = parse_identifier(target_group)
     
     for session in accounts:
+        if GLOBAL_CANCEL_FLAGS.get("inviter"):
+            log_msg("🛑 Scrape & Add task was manually cancelled.")
+            break
+            
         targets = assignments[session]
         if not targets:
             continue
@@ -1266,8 +1291,12 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
                     log_msg(f"❌ [{session}] Could not resolve target: '{target_id}'. Skipping.")
                     continue
 
-            for i, user_entity in enumerate(targets):
-                res = await add_single_user(client, target_entity, user_entity, session)
+            for i, user_obj in enumerate(targets):
+                if GLOBAL_CANCEL_FLAGS.get("inviter"):
+                    log_msg(f"🛑 [{session}] Scrape & Add stopped mid-loop.")
+                    break
+                    
+                res = await add_single_user(client, target_entity, user_obj, session)
                 
                 if res == "RESTRICTED":
                     log_msg(f"   ⚠️ [{session}] Safety breakout triggered to prevent ban.")
@@ -1276,7 +1305,7 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
                 if isinstance(res, (int, float)) and not isinstance(res, bool):
                     log_msg(f"   🕒 Waiting {res}s due to rate limit...")
                     await asyncio.sleep(res)
-                    res_retry = await add_single_user(client, target_entity, user_entity, session)
+                    res_retry = await add_single_user(client, target_entity, user_obj, session)
                     if res_retry == "RESTRICTED":
                         log_msg(f"   ⚠️ [{session}] Safety breakout triggered to prevent ban.")
                         break

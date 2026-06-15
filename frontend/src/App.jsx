@@ -510,6 +510,15 @@ function MainApp({ onLogout }) {
     setLoading(false);
   };
 
+  const handleStopTasks = async () => {
+    try {
+      await axios.post(`${API_BASE}/inviter/stop`);
+      axios.post(`${API_BASE}/logs/clear`); // Optionally clear logs or not
+    } catch (err) {
+      setErrorMsg('Failed to send stop signal.');
+    }
+  };
+
   const handleWarmStart = async (e) => {
     e.preventDefault();
     setLoading(true); setErrorMsg('');
@@ -1509,9 +1518,12 @@ function MainApp({ onLogout }) {
 
         {activeTab === 'Terminal Logs' && (
           <div className="animate-fade-in glass-panel" style={{ padding: '20px', minHeight: '400px' }}>
-            <h2 style={{ marginBottom: '15px', display: 'flex', justifyContent: 'space-between' }}>
+            <h2 style={{ marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               System Logs 
-              <button className="glass-button secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => axios.post(`${API_BASE}/logs/clear`)}>Clear Logs</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="glass-button" style={{ padding: '6px 12px', fontSize: '0.85rem', background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white' }} onClick={handleStopTasks}>🛑 Stop Tasks</button>
+                <button className="glass-button secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => axios.post(`${API_BASE}/logs/clear`)}>Clear Logs</button>
+              </div>
             </h2>
             <div style={{ background: '#000', padding: '15px', borderRadius: '8px', fontFamily: 'monospace', fontSize: '14px', height: '400px', overflowY: 'auto' }}>
               {logs.length === 0 ? (
