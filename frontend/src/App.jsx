@@ -217,6 +217,7 @@ function MainApp({ onLogout }) {
   // Login State
   const [loginPhone, setLoginPhone] = useState('');
   const [loginCode, setLoginCode] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [loginStep, setLoginStep] = useState(0); 
 
   // Scraper State
@@ -347,10 +348,20 @@ function MainApp({ onLogout }) {
     e.preventDefault();
     setLoading(true); setErrorMsg('');
     try {
-      await axios.post(`${API_BASE}/accounts/login/confirm`, { phone: loginPhone, code: loginCode });
-      setLoginStep(0); setLoginPhone(''); setLoginCode('');
+      const payload = { phone: loginPhone, code: loginCode };
+      if (loginStep === 2) payload.password = loginPassword;
+      
+      const res = await axios.post(`${API_BASE}/accounts/login/confirm`, payload);
+      
+      if (res.data.status === 'password_required') {
+        setLoginStep(2);
+        setLoading(false);
+        return;
+      }
+      
+      setLoginStep(0); setLoginPhone(''); setLoginCode(''); setLoginPassword('');
       fetchAccounts(); setActiveTab('Dashboard');
-    } catch (err) { setErrorMsg(err.response?.data?.detail || 'Invalid code'); }
+    } catch (err) { setErrorMsg(err.response?.data?.detail || 'Invalid code or password'); }
     setLoading(false);
   };
 
@@ -869,7 +880,7 @@ function MainApp({ onLogout }) {
             <div className="glass-panel" style={{ padding: '30px', maxWidth: '500px', margin: '0 auto' }}>
               <h2 style={{ marginBottom: '20px' }}>Login New Account</h2>
               {errorMsg && <div style={{ color: 'var(--accent-red)', marginBottom: '15px' }}>{errorMsg}</div>}
-              {loginStep === 0 ? (
+              {loginStep === 0 && (
                 <form onSubmit={handleRequestCode}>
                   <div className="form-group">
                     <label className="form-label">Phone Number (with +)</label>
@@ -877,13 +888,23 @@ function MainApp({ onLogout }) {
                   </div>
                   <button type="submit" className="glass-button" style={{ width: '100%' }} disabled={loading}>{loading ? 'Requesting...' : 'Request Code'}</button>
                 </form>
-              ) : (
+              )}
+              {loginStep === 1 && (
                 <form onSubmit={handleConfirmLogin}>
                   <div className="form-group">
                     <label className="form-label">Login Code sent to {loginPhone}</label>
                     <input type="text" className="glass-input" placeholder="12345" value={loginCode} onChange={(e) => setLoginCode(e.target.value)} required />
                   </div>
                   <button type="submit" className="glass-button" style={{ width: '100%' }} disabled={loading}>{loading ? 'Verifying...' : 'Verify & Login'}</button>
+                </form>
+              )}
+              {loginStep === 2 && (
+                <form onSubmit={handleConfirmLogin}>
+                  <div className="form-group">
+                    <label className="form-label">Two-Step Verification (2FA) Password</label>
+                    <input type="password" className="glass-input" placeholder="Enter your 2FA password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required />
+                  </div>
+                  <button type="submit" className="glass-button" style={{ width: '100%' }} disabled={loading}>{loading ? 'Logging in...' : 'Submit Password'}</button>
                 </form>
               )}
 
