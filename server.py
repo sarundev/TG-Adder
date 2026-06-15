@@ -136,7 +136,7 @@ def make_client(session_path: str) -> TelegramClient:
     """Create a TelegramClient using RobustSQLiteSession to avoid 'database is locked'."""
     session = RobustSQLiteSession(session_path)
     return TelegramClient(
-        session, API_ID, API_HASH,
+        session, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -470,7 +470,7 @@ async def login_request(req: LoginRequest):
     session_filename = phone.replace("+", "").replace(" ", "_")
     session_path = os.path.join(ACCOUNTS_DIR, session_filename)
     
-    client = TelegramClient(session_path, API_ID, API_HASH,
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -488,6 +488,8 @@ async def login_request(req: LoginRequest):
         PENDING_CLIENTS[phone] = client
         return {"status": "code_sent", "phone": phone}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         await client.disconnect()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -525,7 +527,7 @@ async def login_confirm(req: LoginConfirm):
 @app.post("/api/accounts/details/{session_name}")
 async def get_account_details(session_name: str):
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
-    client = TelegramClient(session_path, API_ID, API_HASH,
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -620,7 +622,7 @@ async def scrape_group(req: ScrapeRequest):
     f_has_name       = req.filter_has_name
 
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
-    client = TelegramClient(session_path, API_ID, API_HASH,
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -741,7 +743,7 @@ async def export_scraped_csv(cache_id: str):
 async def scrape_my_groups(req: AccountRequest):
     session_name = req.account
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
-    client = TelegramClient(session_path, API_ID, API_HASH,
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -1138,7 +1140,7 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
         log_msg(f"\n🔄 [{session}] Connecting to invite {len(targets)} users...")
         session_path = os.path.join(ACCOUNTS_DIR, session)
         client = TelegramClient(
-            session_path, API_ID, API_HASH,
+            session_path, api_id=API_ID, api_hash=API_HASH,
             device_model="iPhone 13 Pro Max",
             system_version="15.5",
             app_version="8.7.1",
@@ -1207,7 +1209,7 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
     GLOBAL_CANCEL_FLAGS["inviter"] = False
 
     primary_path = os.path.join(ACCOUNTS_DIR, primary_account)
-    primary_client = TelegramClient(primary_path, API_ID, API_HASH,
+    primary_client = TelegramClient(primary_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -1285,7 +1287,7 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
         log_msg(f"\n🔄 [{session}] Connecting to invite {len(targets)} users...")
         session_path = os.path.join(ACCOUNTS_DIR, session)
         client = TelegramClient(
-            session_path, API_ID, API_HASH,
+            session_path, api_id=API_ID, api_hash=API_HASH,
             device_model="iPhone 13 Pro Max",
             system_version="15.5",
             app_version="8.7.1",
@@ -1458,7 +1460,7 @@ async def invite_by_username_worker(accounts: List[str], target_group: str, user
         log_msg(f"\n🔄 [{session}] Connecting to add {len(targets)} username(s)...")
         session_path = os.path.join(ACCOUNTS_DIR, session)
         client = TelegramClient(
-            session_path, API_ID, API_HASH,
+            session_path, api_id=API_ID, api_hash=API_HASH,
             device_model="iPhone 13 Pro Max",
             system_version="15.5",
             app_version="8.7.1",
@@ -1569,7 +1571,7 @@ async def start_approver(req: ApproverRequest):
         ACTIVE_LISTENERS.pop(session_name, None)
         
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
-    client = TelegramClient(session_path, API_ID, API_HASH,
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -1619,7 +1621,7 @@ async def stop_approver(session_name: str):
 @app.get("/api/boost/status/{session_name}")
 async def get_boost_status(session_name: str):
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
-    client = TelegramClient(session_path, API_ID, API_HASH,
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -1679,7 +1681,7 @@ async def apply_boost(req: ApplyBoostRequest):
         raise HTTPException(status_code=400, detail="At least one slot must be selected")
         
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
-    client = TelegramClient(session_path, API_ID, API_HASH,
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
         app_version="8.7.1",
@@ -1751,7 +1753,7 @@ async def auto_boost_channels(req: AutoBoostRequest):
             
         session_path = os.path.join(ACCOUNTS_DIR, session)
         client = TelegramClient(
-            session_path, API_ID, API_HASH,
+            session_path, api_id=API_ID, api_hash=API_HASH,
             device_model="iPhone 13 Pro Max",
             system_version="15.5",
             app_version="8.7.1",
@@ -2038,7 +2040,7 @@ async def join_group_worker(accounts: List[str], target_group: str, delay: float
             try:
                 log_msg(f"🔄 [{session}] Connecting to join {target_group}...")
                 client = TelegramClient(
-                    session_path, API_ID, API_HASH,
+                    session_path, api_id=API_ID, api_hash=API_HASH,
                     device_model="iPhone 13 Pro Max",
                     system_version="15.5",
                     app_version="8.7.1",
