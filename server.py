@@ -2,10 +2,12 @@ import os
 import re
 import csv
 import json
-import csv
 import random
 import asyncio
 import threading
+import shutil
+import tempfile
+import zipfile
 from datetime import datetime, timezone
 import io
 from typing import List, Optional
@@ -14,6 +16,20 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from telethon import TelegramClient, events, functions
+from telethon.sessions import SQLiteSession
+import sqlite3
+from opentele.td import TDesktop
+from opentele.api import API, UseCurrentSession
+
+class RobustSQLiteSession(SQLiteSession):
+    """SQLiteSession with 30s timeout + WAL mode to prevent 'database is locked' errors."""
+    def _connect(self):
+        self._conn = sqlite3.connect(self.filename + '.session', timeout=30, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.commit()
+
 from telethon.tl.types import Channel, Chat, User, InputUser
 from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
 from telethon.tl.functions.messages import AddChatUserRequest, ImportChatInviteRequest
@@ -25,7 +41,13 @@ from telethon.errors import (
     PeerFloodError,
     SessionPasswordNeededError,
     ChatWriteForbiddenError,
-    ChatAdminRequiredError
+    ChatAdminRequiredError,
+    UsersTooMuchError,
+    UserNotMutualContactError,
+    InputUserDeactivatedError,
+    UserKickedError,
+    UserBannedInChannelError,
+    BotGroupsBlockedError
 )
 
 app = FastAPI(title="Telegram Suite API")
@@ -49,6 +71,24 @@ LOG_BUFFER = []
 SCRAPED_MEMBERS_CACHE = {}
 ACTIVE_LISTENERS = {}
 IS_INVITING = False
+# Per-session async locks — prevents concurrent SQLite access on the same .session file
+SESSION_LOCKS: dict = {}
+
+def get_session_lock(session_name: str) -> asyncio.Lock:
+    """Returns (and creates if needed) a per-session asyncio Lock."""
+    if session_name not in SESSION_LOCKS:
+        SESSION_LOCKS[session_name] = asyncio.Lock()
+    return SESSION_LOCKS[session_name]
+
+async def configure_session_db(client):
+    """Apply WAL mode + busy_timeout to a Telethon client's SQLite session to prevent locking."""
+    try:
+        if hasattr(client, 'session') and hasattr(client.session, '_conn') and client.session._conn:
+            client.session._conn.execute("PRAGMA journal_mode=WAL")
+            client.session._conn.execute("PRAGMA busy_timeout=30000")  # 30 seconds
+            client.session._conn.commit()
+    except Exception:
+        pass  # Non-critical; proceed without WAL if unavailable
 
 def log_msg(msg: str):
     LOG_BUFFER.append(msg)
@@ -64,6 +104,19 @@ def get_saved_sessions():
             sessions.append(f[:-8])
     return sorted(sessions)
 
+def make_client(session_path: str) -> TelegramClient:
+    """Create a TelegramClient using RobustSQLiteSession to avoid 'database is locked'."""
+    session = RobustSQLiteSession(session_path)
+    return TelegramClient(
+        session, API_ID, API_HASH,
+        device_model="iPhone 13 Pro Max",
+        system_version="15.5",
+        app_version="8.7.1",
+        lang_code="en",
+        system_lang_code="en"
+    )
+
+
 def parse_identifier(url: str):
     url = url.strip()
     match = re.search(r'(?:t\.me|telegram\.me)/([a-zA-Z0-9_]+)', url)
@@ -73,9 +126,37 @@ def parse_identifier(url: str):
         return url[1:]
     return url
 
+import json
+import hashlib
+import time as _time
+
+# --- License Key Store ---
+LICENSE_FILE = os.path.join(os.path.dirname(__file__), 'licenses.json')
+
+def _load_licenses():
+    if not os.path.exists(LICENSE_FILE):
+        # Create a default license file with one demo key
+        default = {
+            "keys": {
+                "TGADDER-2024-DEMO-0000": {
+                    "label": "Demo License",
+                    "active": True,
+                    "expires": None   # None = never expires
+                }
+            }
+        }
+        with open(LICENSE_FILE, 'w') as f:
+            json.dump(default, f, indent=2)
+        return default
+    with open(LICENSE_FILE, 'r') as f:
+        return json.load(f)
+
 # --- Pydantic Models ---
 class LoginRequest(BaseModel):
     phone: str
+
+class LicenseRequest(BaseModel):
+    key: str
 
 class LoginConfirm(BaseModel):
     phone: str
@@ -86,6 +167,12 @@ class ScrapeRequest(BaseModel):
     account: str
     group_url: str
     keyword: Optional[str] = None
+    # ── Filters ──────────────────────────────────────
+    filter_has_username: bool = False   # Only users with a @username
+    filter_has_phone: bool = False      # Only users with visible phone
+    filter_no_bots: bool = True         # Exclude bots (default ON)
+    filter_active_recently: bool = False  # Only recently-active users
+    filter_has_name: bool = False       # Only users with a real first name
 
 class AccountRequest(BaseModel):
     account: str
@@ -103,6 +190,12 @@ class GroupToGroupInviteRequest(BaseModel):
     target_group: str
     delay: float
 
+class InviteByUsernameRequest(BaseModel):
+    accounts: List[str]
+    target_group: str
+    usernames: List[str]
+    delay: float
+
 class ApproverRequest(BaseModel):
     account: str
     group_url: str
@@ -117,6 +210,15 @@ class AutoBoostRequest(BaseModel):
     target_group: str
     max_boosts: Optional[int] = None
 
+class WarmRequest(BaseModel):
+    accounts: List[str]
+    do_react: bool = True
+    do_chat: bool = True
+    reactions_per_group: int = 3
+    messages_to_send: int = 3
+    react_delay: float = 10.0
+    chat_delay: float = 20.0
+
 # --- License Models ---
 class LicenseVerifyRequest(BaseModel):
     token: str
@@ -128,7 +230,6 @@ class LicenseGenerateRequest(BaseModel):
 
 # --- Endpoints ---
 
-import json
 LICENSE_FILE = os.path.join(ACCOUNTS_DIR, "licenses.json")
 
 def load_licenses():
@@ -182,6 +283,46 @@ def generate_license(req: LicenseGenerateRequest):
     
     return {"status": "success", "token": new_token}
 
+@app.get("/api/license/list")
+def list_licenses(admin_key: str):
+    if admin_key != "admin123":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    licenses = load_licenses()
+    result = []
+    for token, data in licenses.items():
+        result.append({
+            "token":      token,
+            "hwid":       data.get("hwid"),
+            "bound":      data.get("hwid") is not None,
+            "created_at": data.get("created_at", ""),
+        })
+    return {"count": len(result), "keys": result}
+
+@app.post("/api/license/revoke")
+def revoke_license(req: dict):
+    if req.get("admin_key") != "admin123":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    token = req.get("token", "").strip()
+    licenses = load_licenses()
+    if token not in licenses:
+        raise HTTPException(status_code=404, detail="Token not found")
+    del licenses[token]
+    save_licenses(licenses)
+    return {"status": "revoked", "token": token}
+
+@app.post("/api/license/reset-hwid")
+def reset_hwid(req: dict):
+    """Unbind a key from its device so it can be used on a new machine."""
+    if req.get("admin_key") != "admin123":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    token = req.get("token", "").strip()
+    licenses = load_licenses()
+    if token not in licenses:
+        raise HTTPException(status_code=404, detail="Token not found")
+    licenses[token]["hwid"] = None
+    save_licenses(licenses)
+    return {"status": "ok", "message": f"HWID reset for {token}"}
+
 
 @app.get("/api/accounts")
 def list_accounts():
@@ -197,7 +338,67 @@ def delete_account(session_name: str):
         os.remove(journal_path)
     return {"status": "ok"}
 
+@app.post("/api/accounts/upload-tdata-zip")
+async def upload_tdata_zip(file: UploadFile = File(...)):
+    if not file.filename.endswith('.zip'):
+        raise HTTPException(status_code=400, detail="Must be a .zip file containing a tdata folder")
+    
+    # Create temp directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, "uploaded.zip")
+        with open(zip_path, "wb") as f:
+            f.write(await file.read())
+            
+        extract_path = os.path.join(tmpdir, "extracted")
+        os.makedirs(extract_path, exist_ok=True)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+            
+        # Find the tdata folder inside extracted
+        tdata_path = None
+        for root, dirs, files in os.walk(extract_path):
+            if "key_datas" in files or any(d.endswith('s') and len(d) == 17 for d in dirs):
+                tdata_path = root
+                break
+                
+        if not tdata_path:
+            raise HTTPException(status_code=400, detail="Invalid tdata format. Could not find key_datas.")
+            
+        try:
+            api = API.TelegramDesktop.Generate()
+            tdesk = TDesktop(tdata_path)
+            if not tdesk.isLoaded():
+                raise HTTPException(status_code=400, detail="Could not load session from tdata")
+                
+            temp_session_path = os.path.join(tmpdir, "temp.session")
+            client = await tdesk.ToTelethon(temp_session_path, UseCurrentSession, api)
+            
+            await client.connect()
+            if not await client.is_user_authorized():
+                await client.disconnect()
+                raise HTTPException(status_code=400, detail="Session in tdata is not authorized")
+                
+            user = await client.get_me()
+            phone = user.phone
+            await client.disconnect()
+            
+            if not phone:
+                raise HTTPException(status_code=400, detail="Could not extract phone number from tdata")
+                
+            # Move temp session to accounts dir
+            final_session_path = os.path.join(ACCOUNTS_DIR, f"{phone}.session")
+            shutil.copy(temp_session_path, final_session_path)
+            
+            return {
+                "status": "success",
+                "phone": phone,
+                "name": f"{user.first_name} {user.last_name or ''}".strip()
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/accounts/login/request")
+
 async def login_request(req: LoginRequest):
     phone = req.phone.strip()
     if not phone:
@@ -272,26 +473,70 @@ async def get_account_details(session_name: str):
         await client.connect()
         if not await client.is_user_authorized():
             return {"status": "unauthorized"}
-            
+
         user = await client.get_me()
         dialogs = await client.get_dialogs()
-        groups = [d for d in dialogs if d.is_group or d.is_channel]
-        
-        group_list = [{"id": g.id, "name": g.name} for g in groups]
-        channels_count = sum(1 for d in dialogs if d.is_channel)
-        pms_count = sum(1 for d in dialogs if d.is_user)
-        
+        groups   = [d for d in dialogs if d.is_group or d.is_channel]
+        group_list      = [{"id": g.id, "name": g.name} for g in groups]
+        channels_count  = sum(1 for d in dialogs if d.is_channel)
+        pms_count       = sum(1 for d in dialogs if d.is_user)
+
+        # ── Restriction detection ──────────────────────────────────────────
+        is_restricted   = getattr(user, 'restricted', False)
+        restrict_reason = ""
+
+        # Parse restriction_reason list if available
+        raw_reasons = getattr(user, 'restriction_reason', None) or []
+        if raw_reasons:
+            parts = []
+            for r in raw_reasons:
+                platform = getattr(r, 'platform', '')
+                reason   = getattr(r, 'reason',   '')
+                text     = getattr(r, 'text',     '')
+                entry = f"{platform}: {reason}" if platform else reason
+                if text:
+                    entry += f" — {text}"
+                if entry.strip():
+                    parts.append(entry.strip())
+            restrict_reason = "; ".join(parts) if parts else "Account restricted by Telegram"
+            is_restricted = True
+
+        # Also try GetFullUserRequest to catch spam-block and bio-based hints
+        if not is_restricted:
+            try:
+                from telethon.tl.functions.users import GetFullUserRequest
+                full = await client(GetFullUserRequest(user))
+                full_user = getattr(full, 'full_user', full)
+
+                # about/bio sometimes set to "SpamBlock" or similar by Telegram internally
+                about = getattr(full_user, 'about', '') or ''
+                if 'spam' in about.lower() or 'block' in about.lower():
+                    is_restricted = True
+                    restrict_reason = f"Possible spam block (bio: {about[:80]})"
+
+                # Check settings for auto-archive (often set when account is flagged)
+                settings = getattr(full_user, 'settings', None)
+                if settings and getattr(settings, 'autoarchived', False):
+                    is_restricted = True
+                    restrict_reason = restrict_reason or "Account auto-archived by Telegram (spam flag)"
+
+            except Exception:
+                pass  # Non-critical, skip restriction probe on error
+
+        # ────────────────────────────────────────────────────────
         return {
-            "status": "authorized",
-            "user_id": user.id,
-            "name": f"{user.first_name} {user.last_name or ''}".strip(),
-            "username": f"@{user.username}" if user.username else "None",
-            "phone": f"+{user.phone}",
-            "premium": user.premium,
-            "groups_count": len(groups),
-            "channels_count": channels_count,
-            "pms_count": pms_count,
-            "groups": group_list
+            "status":           "restricted" if is_restricted else "authorized",
+            "user_id":          user.id,
+            "name":             f"{user.first_name} {user.last_name or ''}".strip(),
+            "username":         f"@{user.username}" if user.username else "None",
+            "phone":            f"+{user.phone}",
+            "premium":          user.premium,
+            "groups_count":     len(groups),
+            "channels_count":   channels_count,
+            "pms_count":        pms_count,
+            "groups":           group_list,
+            "is_restricted":    is_restricted,
+            "restrict_reason":  restrict_reason,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -303,7 +548,14 @@ async def scrape_group(req: ScrapeRequest):
     session_name = req.account
     url = req.group_url.strip()
     keyword = req.keyword.strip() if req.keyword else None
-    
+
+    # Collect filter flags
+    f_username       = req.filter_has_username
+    f_phone          = req.filter_has_phone
+    f_no_bots        = req.filter_no_bots
+    f_active_recently = req.filter_active_recently
+    f_has_name       = req.filter_has_name
+
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
     client = TelegramClient(session_path, API_ID, API_HASH,
         device_model="iPhone 13 Pro Max",
@@ -312,16 +564,16 @@ async def scrape_group(req: ScrapeRequest):
         lang_code="en",
         system_lang_code="en"
     )
-    
+
     try:
         await client.connect()
         if not await client.is_user_authorized():
             raise HTTPException(status_code=401, detail="Session expired or unauthorized")
-            
+
         # Parse link type
         is_private = 'joinchat/' in url or '+' in url
         identifier = parse_identifier(url)
-        
+
         group_entity = None
         if is_private:
             dialogs = await client.get_dialogs()
@@ -335,14 +587,48 @@ async def scrape_group(req: ScrapeRequest):
             identifier = "".join([c if c.isalnum() else "_" for c in matches[0].name])
         else:
             group_entity = await client.get_entity(identifier)
-            
+
         if not group_entity:
             raise HTTPException(status_code=404, detail="Could not resolve group entity")
-            
+
+        from telethon.tl.types import (
+            UserStatusRecently, UserStatusOnline, UserStatusLastWeek
+        )
+
         members = []
+        total_seen = 0
+        filtered_out = 0
+
         async for user in client.iter_participants(group_entity):
-            if user.bot or user.is_self or user.deleted:
+            total_seen += 1
+
+            # ── Apply filters ───────────────────────────────────────────────
+            if user.is_self or user.deleted:
+                filtered_out += 1
                 continue
+
+            if f_no_bots and user.bot:
+                filtered_out += 1
+                continue
+
+            if f_username and not user.username:
+                filtered_out += 1
+                continue
+
+            if f_phone and not user.phone:
+                filtered_out += 1
+                continue
+
+            if f_has_name and not (user.first_name or '').strip():
+                filtered_out += 1
+                continue
+
+            if f_active_recently:
+                active = isinstance(user.status, (UserStatusOnline, UserStatusRecently, UserStatusLastWeek))
+                if not active:
+                    filtered_out += 1
+                    continue
+
             members.append({
                 'id': user.id,
                 'username': user.username or '',
@@ -351,14 +637,16 @@ async def scrape_group(req: ScrapeRequest):
                 'phone': user.phone or '',
                 'is_bot': 'Yes' if user.bot else 'No'
             })
-            
+
         # Cache results for export
         cache_id = f"members_{identifier}"
         SCRAPED_MEMBERS_CACHE[cache_id] = members
-        
+
         return {
             "status": "success",
             "count": len(members),
+            "total_seen": total_seen,
+            "filtered_out": filtered_out,
             "cache_id": cache_id
         }
     except Exception as e:
@@ -458,43 +746,300 @@ def clear_logs():
     LOG_BUFFER.clear()
     return {"status": "ok"}
 
+# ─────────────────────────────────────────────
+#  ACCOUNT PRE-SCREENING — checks if an account
+#  can actually add members to the target group
+# ─────────────────────────────────────────────
+async def check_account_can_add(session: str, target_group: str) -> tuple:
+    """
+    Returns (True, target_entity) if the account can add to the target group,
+    or (False, reason_string) if it cannot.
+    """
+    session_path = os.path.join(ACCOUNTS_DIR, session)
+    client = make_client(session_path)
+    try:
+        await client.connect()
+
+        if not await client.is_user_authorized():
+            return False, "session expired / unauthorized"
+
+        target_id = parse_identifier(target_group)
+        is_private = 'joinchat/' in target_group or '+' in target_group
+
+        # Try to join if not already a member
+        try:
+            if is_private:
+                match = re.search(r'(?:\+|joinchat/)([a-zA-Z0-9_\-]+)', target_group)
+                if match:
+                    await client(ImportChatInviteRequest(match.group(1)))
+            else:
+                await client(JoinChannelRequest(target_id))
+        except Exception:
+            pass  # Already a member or join not needed
+
+        # Resolve the entity
+        target_entity = None
+        try:
+            target_entity = await client.get_entity(target_id)
+        except Exception as e:
+            return False, f"cannot resolve group ({e})"
+
+        if target_entity is None:
+            return False, "group not found"
+
+        # Check admin/add rights by inspecting channel full info or participant rights
+        try:
+            from telethon.tl.functions.channels import GetFullChannelRequest
+            from telethon.tl.types import Channel as TLChannel
+            if isinstance(target_entity, TLChannel):
+                full = await client(GetFullChannelRequest(target_entity))
+                # If bot_info exists or we can get participants, we likely have access
+                # Check our own participant status
+                me = await client.get_me()
+                from telethon.tl.functions.channels import GetParticipantRequest
+                from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator, ChannelParticipant
+                try:
+                    part = await client(GetParticipantRequest(target_entity, me))
+                    p = part.participant
+                    if isinstance(p, (ChannelParticipantCreator,)):
+                        pass  # Creator — always can add
+                    elif isinstance(p, ChannelParticipantAdmin):
+                        # Check invite_users right
+                        if not getattr(p.admin_rights, 'invite_users', False):
+                            return False, "admin but no invite_users permission"
+                    elif isinstance(p, ChannelParticipant):
+                        # Regular member — can only add if group allows it
+                        if not getattr(full.full_chat, 'can_set_username', True):
+                            pass  # public group — members can invite
+                except Exception:
+                    pass  # Can't get participant info — assume OK and let the add fail naturally
+        except Exception:
+            pass  # Non-channel or can't check — proceed
+
+        return True, target_entity
+
+    except Exception as e:
+        return False, str(e)
+    finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+async def screen_accounts_for_group(accounts: List[str], target_group: str) -> List[str]:
+    """
+    Checks all accounts and returns only those that can add to the target group.
+    Logs a summary of valid/invalid accounts.
+    """
+    log_msg(f"\n🔍 PRE-SCREENING {len(accounts)} account(s) for target group...")
+    valid = []
+    invalid = []
+
+    for session in accounts:
+        ok, result = await check_account_can_add(session, target_group)
+        if ok:
+            log_msg(f"   ✅ [{session}] Can add to group")
+            valid.append(session)
+        else:
+            log_msg(f"   ❌ [{session}] Cannot add — {result}")
+            invalid.append(session)
+
+    log_msg(f"\n📊 Screening result: {len(valid)} usable / {len(invalid)} blocked")
+    if not valid:
+        log_msg("⛔ No usable accounts found. Aborting.")
+    return valid
+
 # --- Inviter Background Thread Execution ---
+
+async def _try_import_as_contact(client, user_entity, session_name: str, user_label: str) -> bool:
+    """
+    Attempt to import a user as a phone contact so the adder becomes their contact.
+    This bypasses 'My Contacts Only' group-add privacy — Telegram allows contacts
+    to directly add you regardless of that setting.
+    Returns True if successfully imported.
+    """
+    phone = getattr(user_entity, 'phone', None)
+    if not phone:
+        return False  # Cannot import without a phone number
+    try:
+        from telethon.tl.functions.contacts import ImportContactsRequest
+        from telethon.tl.types import InputPhoneContact
+        first  = getattr(user_entity, 'first_name', '') or ''
+        last   = getattr(user_entity, 'last_name',  '') or ''
+        result = await client(ImportContactsRequest([
+            InputPhoneContact(client_id=0, phone=phone, first_name=first, last_name=last)
+        ]))
+        if getattr(result, 'imported', []):
+            log_msg(f"   📞 [{session_name}] Imported {user_label} as contact — will attempt direct add.")
+            return True
+    except Exception:
+        pass
+    return False
+
+
+async def _would_send_invite_only(client, user_entity, session_name: str, user_label: str) -> bool:
+    """
+    Pre-flight check: detect whether calling InviteToChannelRequest would only send
+    an invite link notification to the user instead of directly adding them.
+
+    Telegram sends an invite link (not a direct add) when:
+      • The user's privacy is set to 'My Contacts' for group adds AND
+        the adder is not in their contacts.
+
+    We inspect PeerSettings from GetFullUserRequest:
+      • need_contacts_exception = True  →  user has set privacy but we are an exception
+      • add_contact = True AND NOT contact →  we're not their contact; privacy may block
+    Combined with user.contact / user.mutual_contact flags.
+
+    Returns True if we would only send an invite (should skip), False if direct add likely OK.
+    """
+    is_contact        = getattr(user_entity, 'contact',        False)
+    is_mutual_contact = getattr(user_entity, 'mutual_contact', False)
+
+    # Mutual contacts can ALWAYS be directly added — no invite link
+    if is_mutual_contact:
+        return False
+
+    try:
+        from telethon.tl.functions.users import GetFullUserRequest
+        full     = await client(GetFullUserRequest(user_entity))
+        settings = getattr(getattr(full, 'full_user', full), 'settings', None)
+        if settings is None:
+            return False  # Cannot determine — try anyway
+
+        # need_contacts_exception: Telegram set this when the user recently added
+        # us to contacts or a special exception exists — direct add should work
+        if getattr(settings, 'need_contacts_exception', False):
+            return False
+
+        # add_contact=True means we DON'T have this person as a contact yet.
+        # Combined with not being their contact → high chance of invite-link-only.
+        not_our_contact   = getattr(settings, 'add_contact', False)
+        not_their_contact = not is_contact
+
+        if not_our_contact and not_their_contact:
+            return True  # Very likely only an invite link would be sent
+
+    except Exception:
+        pass  # If check fails, try the add anyway
+
+    return False
+
+
 async def add_single_user(client, target_entity, user_or_id, session_name):
+    """
+    Invite a single user to a group/channel WITHOUT sending them an invite link.
+
+    Strategy:
+      1. Resolve the user entity.
+      2. If a phone number is available (from scraping) → try importing as a contact first.
+         This bypasses 'My Contacts Only' privacy so the add is direct, not an invite.
+      3. Pre-flight check: if the user would only receive an invite link notification
+         (not be directly added), SKIP them entirely — no InviteToChannelRequest call made.
+      4. Call InviteToChannelRequest and inspect result.users to confirm direct add.
+      5. Fall back to GetParticipantRequest for a secondary membership confirmation.
+    """
+    from telethon.tl.functions.channels import GetParticipantRequest
+    from telethon.tl.types import (
+        ChannelParticipant, ChannelParticipantAdmin, ChannelParticipantCreator
+    )
+
     user_label = "Unknown User"
     try:
+        # ── Step 1: Resolve user ──────────────────────────────────────────────
         if isinstance(user_or_id, User):
             user_entity = user_or_id
-            user_label = f"@{user_entity.username}" if getattr(user_entity, 'username', None) else f"ID {getattr(user_entity, 'id', 'Unknown')}"
         else:
             user_entity = await client.get_entity(user_or_id)
-            user_label = f"@{user_entity.username}" if getattr(user_entity, 'username', None) else f"ID {getattr(user_entity, 'id', 'Unknown')}"
-        
+
+        user_label = (
+            f"@{user_entity.username}" if getattr(user_entity, 'username', None)
+            else f"ID {getattr(user_entity, 'id', 'Unknown')}"
+        )
+        user_id = getattr(user_entity, 'id', None)
+
         if isinstance(target_entity, Channel):
-            await client(InviteToChannelRequest(target_entity, [user_entity]))
+
+            # ── Step 2: Phone-based contact import (bypasses privacy) ─────────
+            phone = getattr(user_entity, 'phone', None)
+            if phone:
+                await _try_import_as_contact(client, user_entity, session_name, user_label)
+                # Re-fetch entity so contact flags are updated
+                try:
+                    user_entity = await client.get_entity(user_id)
+                except Exception:
+                    pass
+
+            # ── Step 3: Pre-flight — skip if only invite link would be sent ───
+            if await _would_send_invite_only(client, user_entity, session_name, user_label):
+                log_msg(
+                    f"   ⏭️ [{session_name}] Skipped {user_label} — their privacy only allows "
+                    f"contacts to add them. Calling the API would send an invite link instead "
+                    f"of directly adding. No notification sent."
+                )
+                return False
+
+            # ── Step 4: Direct add ────────────────────────────────────────────
+            result   = await client(InviteToChannelRequest(target_entity, [user_entity]))
+            added_ids = {u.id for u in getattr(result, 'users', [])}
+
+            if user_id and user_id in added_ids:
+                log_msg(f"   ✅ [{session_name}] Directly added (no invite link): {user_label}")
+                return True
+
+            # ── Step 5: Fallback confirmation via GetParticipantRequest ───────
+            confirmed = False
+            try:
+                part = await client(GetParticipantRequest(target_entity, user_entity))
+                p    = part.participant
+                if isinstance(p, (ChannelParticipant, ChannelParticipantAdmin, ChannelParticipantCreator)):
+                    confirmed = True
+            except Exception:
+                pass
+
+            if confirmed:
+                log_msg(f"   ✅ [{session_name}] Successfully added (confirmed): {user_label}")
+            else:
+                log_msg(
+                    f"   ⚠️ [{session_name}] {user_label} was NOT directly added — "
+                    f"Telegram sent them an invite link notification instead. "
+                    f"(Group may have join-request approval enabled, or their privacy blocked direct add.)"
+                )
+            return confirmed
+
         elif isinstance(target_entity, Chat):
             await client(AddChatUserRequest(chat_id=target_entity.id, user_id=user_entity, fwd_limit=0))
+            log_msg(f"   ✅ [{session_name}] Successfully added: {user_label}")
+            return True
         else:
             raise ValueError("Unsupported target entity")
-            
-        log_msg(f"   ✅ [{session_name}] Successfully added: {user_label}")
-        return True
+
     except UserPrivacyRestrictedError:
-        log_msg(f"   ⚠️ [{session_name}] Privacy settings restricted adding: {user_id_or_username}")
+        log_msg(f"   ⚠️ [{session_name}] Privacy restricted — {user_label} cannot be added (their settings block it).")
     except UserAlreadyParticipantError:
-        log_msg(f"   ℹ️ [{session_name}] Already in channel/group: {user_id_or_username}")
+        log_msg(f"   ℹ️ [{session_name}] Already in group: {user_label}")
     except UserIdInvalidError:
-        log_msg(f"   ❌ [{session_name}] Invalid user identifier: {user_id_or_username}")
-    except PeerFloodError:
-        log_msg(f"   ❌ [{session_name}] Account has been flagged/restricted by Telegram (PeerFloodError)!")
+        log_msg(f"   ❌ [{session_name}] Invalid user identifier: {user_label}")
+    except (InputUserDeactivatedError, UserKickedError, UserBannedInChannelError):
+        log_msg(f"   ❌ [{session_name}] {user_label} is deactivated, kicked, or banned — skipping.")
+    except UsersTooMuchError:
+        log_msg(f"   ❌ [{session_name}] Group member limit reached!")
         return "RESTRICTED"
-    except (ChatWriteForbiddenError, ChatAdminRequiredError) as e:
-        log_msg(f"   ❌ [{session_name}] Permission denied to add to chat. Attempting to bypass by ignoring...")
+    except UserNotMutualContactError:
+        log_msg(f"   ⚠️ [{session_name}] {user_label} requires mutual contact to be added.")
+    except PeerFloodError:
+        log_msg(f"   ❌ [{session_name}] Account flagged/restricted by Telegram (PeerFloodError)!")
+        return "RESTRICTED"
+    except (ChatWriteForbiddenError, ChatAdminRequiredError):
+        log_msg(f"   ❌ [{session_name}] Permission denied — no invite rights in this chat.")
         return False
     except FloodWaitError as e:
         log_msg(f"   ⚠️ [{session_name}] Rate limited! Must wait {e.seconds}s.")
         return e.seconds
+    except BotGroupsBlockedError:
+        log_msg(f"   ❌ [{session_name}] {user_label} is a bot blocked from groups.")
     except Exception as e:
-        # Simplify the printed user label so the logs aren't massive
         short_label = user_label if isinstance(user_label, str) else "User"
         log_msg(f"   ❌ [{session_name}] Failed to add {short_label}: {type(e).__name__} - {e}")
     return False
@@ -504,10 +1049,10 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
     log_msg(f"🚀 INVITATION WEB TASK STARTED")
     log_msg(f"Targets: {len(members)} users | Accounts: {len(accounts)} | Delay: {delay}s")
     log_msg(f"==========================================")
-    
+
     target_id = parse_identifier(target_group)
-    
-    # Shuffle and distribute targets
+
+    # Shuffle and distribute targets across ALL accounts
     random.shuffle(members)
     assignments = {acc: [] for acc in accounts}
     for idx, user in enumerate(members):
@@ -521,13 +1066,14 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
             
         log_msg(f"\n🔄 [{session}] Connecting to invite {len(targets)} users...")
         session_path = os.path.join(ACCOUNTS_DIR, session)
-        client = TelegramClient(session_path, API_ID, API_HASH,
-        device_model="iPhone 13 Pro Max",
-        system_version="15.5",
-        app_version="8.7.1",
-        lang_code="en",
-        system_lang_code="en"
-    )
+        client = TelegramClient(
+            session_path, API_ID, API_HASH,
+            device_model="iPhone 13 Pro Max",
+            system_version="15.5",
+            app_version="8.7.1",
+            lang_code="en",
+            system_lang_code="en"
+        )
         
         try:
             await client.connect()
@@ -565,7 +1111,7 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
                         break
                         
                 if i < len(targets) - 1:
-                    await asyncio.sleep(delay * __import__('random').uniform(0.8, 1.5))
+                    await asyncio.sleep(delay * random.uniform(0.8, 1.5))
                     
         except Exception as e:
             log_msg(f"❌ [{session}] Loop error: {e}")
@@ -640,13 +1186,13 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
     if not scraped_users:
         log_msg("No members found. Invitation process stopped.")
         return
-        
+
     random.shuffle(scraped_users)
     assignments = {acc: [] for acc in accounts}
     for idx, user in enumerate(scraped_users):
         acc = accounts[idx % len(accounts)]
         assignments[acc].append(user)
-        
+
     target_id = parse_identifier(target_group)
     
     for session in accounts:
@@ -656,13 +1202,14 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
             
         log_msg(f"\n🔄 [{session}] Connecting to invite {len(targets)} users...")
         session_path = os.path.join(ACCOUNTS_DIR, session)
-        client = TelegramClient(session_path, API_ID, API_HASH,
-        device_model="iPhone 13 Pro Max",
-        system_version="15.5",
-        app_version="8.7.1",
-        lang_code="en",
-        system_lang_code="en"
-    )
+        client = TelegramClient(
+            session_path, API_ID, API_HASH,
+            device_model="iPhone 13 Pro Max",
+            system_version="15.5",
+            app_version="8.7.1",
+            lang_code="en",
+            system_lang_code="en"
+        )
         
         try:
             await client.connect()
@@ -712,16 +1259,16 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
                         break
                         
                 if i < len(targets) - 1:
-                    await asyncio.sleep(delay * __import__('random').uniform(0.8, 1.5))
+                    await asyncio.sleep(delay * random.uniform(0.8, 1.5))
                     
         except Exception as e:
             log_msg(f"❌ [{session}] Loop error: {e}")
         finally:
             await client.disconnect()
             
-        log_msg(f"\n==========================================")
-        log_msg(f"🎉 GROUP-TO-GROUP BROADCAST COMPLETED")
-        log_msg(f"==========================================")
+    log_msg(f"\n==========================================")
+    log_msg(f"🎉 GROUP-TO-GROUP BROADCAST COMPLETED")
+    log_msg(f"==========================================")
 
 async def run_worker_safe(worker_func, *args):
     global IS_INVITING
@@ -800,6 +1347,113 @@ async def start_inviter_csv(
         delay
     )
     return {"status": "started", "targets": len(members), "accounts_used": len(account_list)}
+
+
+async def invite_by_username_worker(accounts: List[str], target_group: str, usernames: List[str], delay: float):
+    log_msg(f"\n==========================================")
+    log_msg(f"🚀 INVITE BY USERNAME TASK STARTED")
+    log_msg(f"Targets: {len(usernames)} usernames | Accounts: {len(accounts)} | Delay: {delay}s")
+    log_msg(f"==========================================")
+
+    target_id = parse_identifier(target_group)
+
+    # Shuffle and distribute targets across all accounts
+    random.shuffle(usernames)
+    assignments = {acc: [] for acc in accounts}
+    for idx, username in enumerate(usernames):
+        acc = accounts[idx % len(accounts)]
+        assignments[acc].append(username)
+
+    for session in accounts:
+        targets = assignments[session]
+        if not targets:
+            continue
+
+        log_msg(f"\n🔄 [{session}] Connecting to add {len(targets)} username(s)...")
+        session_path = os.path.join(ACCOUNTS_DIR, session)
+        client = TelegramClient(
+            session_path, API_ID, API_HASH,
+            device_model="iPhone 13 Pro Max",
+            system_version="15.5",
+            app_version="8.7.1",
+            lang_code="en",
+            system_lang_code="en"
+        )
+
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                log_msg(f"❌ [{session}] Unauthorized/Expired session. Skipping.")
+                continue
+
+            # Resolve target group
+            target_entity = None
+            try:
+                target_entity = await client.get_entity(target_id)
+            except Exception:
+                log_msg(f"❌ [{session}] Could not resolve target group '{target_id}'. Skipping.")
+                continue
+
+            for i, username in enumerate(targets):
+                # Normalize username — strip @ if present
+                clean_username = username.lstrip('@').strip()
+                if not clean_username:
+                    log_msg(f"   ⚠️ [{session}] Skipping empty username.")
+                    continue
+
+                res = await add_single_user(client, target_entity, clean_username, session)
+
+                if res == "RESTRICTED":
+                    log_msg(f"   ⚠️ [{session}] Safety breakout triggered to prevent ban.")
+                    break
+
+                if isinstance(res, (int, float)) and not isinstance(res, bool):
+                    log_msg(f"   🕒 Waiting {res}s due to rate limit...")
+                    await asyncio.sleep(res)
+                    res_retry = await add_single_user(client, target_entity, clean_username, session)
+                    if res_retry == "RESTRICTED":
+                        log_msg(f"   ⚠️ [{session}] Safety breakout triggered to prevent ban.")
+                        break
+
+                if i < len(targets) - 1:
+                    await asyncio.sleep(delay * random.uniform(0.8, 1.5))
+
+        except Exception as e:
+            log_msg(f"❌ [{session}] Loop error: {e}")
+        finally:
+            await client.disconnect()
+
+    log_msg(f"\n==========================================")
+    log_msg(f"🎉 INVITE BY USERNAME TASK COMPLETED")
+    log_msg(f"==========================================")
+
+
+@app.post("/api/inviter/invite-by-username")
+async def start_invite_by_username(req: InviteByUsernameRequest, background_tasks: BackgroundTasks):
+    if IS_INVITING:
+        raise HTTPException(status_code=400, detail="An inviter task is already running in the background. Please wait for it to finish or restart the server.")
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="No accounts specified")
+    if not req.usernames:
+        raise HTTPException(status_code=400, detail="No usernames provided")
+    if not req.target_group:
+        raise HTTPException(status_code=400, detail="Target group is required")
+
+    # Clean and deduplicate usernames
+    cleaned = list(set([u.lstrip('@').strip() for u in req.usernames if u.strip()]))
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="No valid usernames after cleaning")
+
+    background_tasks.add_task(
+        run_worker_safe,
+        invite_by_username_worker,
+        req.accounts,
+        req.target_group,
+        cleaned,
+        req.delay
+    )
+    return {"status": "started", "targets": len(cleaned), "accounts_used": len(req.accounts)}
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1010,13 +1664,14 @@ async def auto_boost_channels(req: AutoBoostRequest):
             break
             
         session_path = os.path.join(ACCOUNTS_DIR, session)
-        client = TelegramClient(session_path, API_ID, API_HASH,
-        device_model="iPhone 13 Pro Max",
-        system_version="15.5",
-        app_version="8.7.1",
-        lang_code="en",
-        system_lang_code="en"
-    )
+        client = TelegramClient(
+            session_path, API_ID, API_HASH,
+            device_model="iPhone 13 Pro Max",
+            system_version="15.5",
+            app_version="8.7.1",
+            lang_code="en",
+            system_lang_code="en"
+        )
         
         try:
             await client.connect()
@@ -1085,6 +1740,196 @@ async def auto_boost_channels(req: AutoBoostRequest):
     log_msg(f"==========================================")
     
     return {"status": "success", "boosts_applied": boosts_applied}
+
+# ─────────────────────────────────────────────
+#  ACCOUNT WARMER (Make Account Strong)
+# ─────────────────────────────────────────────
+REACTIONS_POOL = ["👍", "❤️", "🔥", "🥰", "👏", "😁", "🎉", "🤩", "😍", "💯", "🙏", "⚡"]
+CHAT_MESSAGES_POOL = [
+    "Hey! How are you doing?",
+    "What's up? Haven't talked in a while!",
+    "Hey, hope you're having a great day! 😊",
+    "Hi! Just checking in on you 🙏",
+    "Hey! Hope everything's going well with you!",
+    "What have you been up to lately?",
+    "Hey man! Long time no chat 😄",
+    "Hope you're doing well! 🙌",
+    "Just wanted to say hi! How's life treating you?",
+    "Hey! How's everything going? 😊",
+]
+
+async def warm_account_worker(accounts: List[str], do_react: bool, do_chat: bool,
+                               reactions_per_group: int, messages_to_send: int,
+                               react_delay: float, chat_delay: float):
+    from telethon.tl.functions.messages import SendReactionRequest
+    from telethon.tl.types import ReactionEmoji
+
+    log_msg(f"\n==========================================")
+    log_msg(f"💪 ACCOUNT WARMER STARTED")
+    log_msg(f"Accounts: {len(accounts)} | React: {do_react} | Chat: {do_chat}")
+    log_msg(f"==========================================")
+
+    for session in accounts:
+        session_path = os.path.join(ACCOUNTS_DIR, session)
+
+        # ── Acquire per-session lock to avoid SQLite "database is locked" ──
+        lock = get_session_lock(session)
+        async with lock:
+            client = make_client(session_path)
+            try:
+                # Retry connect up to 3 times on db-locked errors
+                for attempt in range(3):
+                    try:
+                        await client.connect()
+                        break
+                    except Exception as conn_err:
+                        if 'database is locked' in str(conn_err).lower() and attempt < 2:
+                            log_msg(f"⚠️ [{session}] DB locked on connect, retry {attempt+1}/3 in 5s...")
+                            await asyncio.sleep(5)
+                        else:
+                            raise
+
+
+                if not await client.is_user_authorized():
+                    log_msg(f"❌ [{session}] Session expired or unauthorized. Skipping.")
+                    continue
+
+                me = await client.get_me()
+                display = f"{me.first_name} ({session})"
+                log_msg(f"\n🔄 Warming account: {display}")
+
+                dialogs = await client.get_dialogs()
+                groups = [d for d in dialogs if d.is_group or d.is_channel]
+                contacts = [d for d in dialogs if d.is_user and not getattr(d.entity, 'bot', False)]
+
+                selected_groups = random.sample(groups, min(3, len(groups))) if groups else []
+
+                # --- Auto React ---
+                if do_react:
+                    if not selected_groups:
+                        log_msg(f"⚠️ [{session}] No groups available to react in.")
+                    else:
+                        log_msg(f"⚡ [{session}] Starting Auto-React in {len(selected_groups)} group(s)...")
+                        total_reacted = 0
+                        for group in selected_groups:
+                            group_name = getattr(group.entity, 'title', group.name)
+                            count = 0
+                            try:
+                                async for message in client.iter_messages(group.entity, limit=20):
+                                    if count >= reactions_per_group:
+                                        break
+                                    if not message.text and not message.media:
+                                        continue
+                                    if message.out:
+                                        continue
+                                    try:
+                                        emoji = random.choice(REACTIONS_POOL)
+                                        await client(SendReactionRequest(
+                                            peer=group.entity,
+                                            msg_id=message.id,
+                                            reaction=[ReactionEmoji(emoticon=emoji)]
+                                        ))
+                                        log_msg(f"   {emoji} Reacted in '{group_name}' (msg {message.id})")
+                                        total_reacted += 1
+                                        count += 1
+                                        wait = random.uniform(react_delay * 0.8, react_delay * 1.5)
+                                        await asyncio.sleep(wait)
+                                    except FloodWaitError as e:
+                                        log_msg(f"   ⚠️ Rate limit! Waiting {e.seconds}s...")
+                                        await asyncio.sleep(e.seconds)
+                                    except Exception as ex:
+                                        if 'database is locked' in str(ex).lower():
+                                            log_msg(f"   ⚠️ DB locked during react, waiting 5s...")
+                                            await asyncio.sleep(5)
+                                        else:
+                                            log_msg(f"   ❌ Reaction failed: {ex}")
+                            except Exception as ex:
+                                log_msg(f"   ❌ Error reading '{group_name}': {ex}")
+                        log_msg(f"✅ [{session}] Auto-React done! Total: {total_reacted}")
+
+                # --- Auto Chat ---
+                if do_chat:
+                    # Only keep contacts with a real access_hash (non-zero) — needed to build InputUser
+                    valid_contacts = [
+                        d for d in contacts
+                        if getattr(d.entity, 'id', None) is not None
+                        and getattr(d.entity, 'access_hash', None) not in (None, 0)
+                        and not getattr(d.entity, 'deleted', False)
+                        and not getattr(d.entity, 'bot', False)
+                    ]
+                    if not valid_contacts:
+                        log_msg(f"⚠️ [{session}] No valid contacts to chat with.")
+                    else:
+                        pick = min(messages_to_send, len(valid_contacts))
+                        log_msg(f"💬 [{session}] Starting Auto-Chat with {pick} contact(s)...")
+                        sent_to = random.sample(valid_contacts, pick)
+                        total_sent = 0
+                        for contact in sent_to:
+                            name = getattr(contact.entity, 'first_name', None) or 'Friend'
+                            uid  = contact.entity.id
+                            uhash = contact.entity.access_hash
+                            try:
+                                msg = random.choice(CHAT_MESSAGES_POOL)
+                                # Use InputUser(id, access_hash) — NEVER resolves username
+                                from telethon.tl.types import InputUser as TLInputUser
+                                input_peer = TLInputUser(uid, uhash)
+                                await client.send_message(input_peer, msg)
+                                log_msg(f"   ✅ Sent to {name} ({uid}): \"{msg}\"")
+                                total_sent += 1
+                                wait = random.uniform(chat_delay * 0.8, chat_delay * 1.5)
+                                await asyncio.sleep(wait)
+                            except UserPrivacyRestrictedError:
+                                log_msg(f"   ⚠️ {name} has privacy restrictions, skipping...")
+                            except FloodWaitError as e:
+                                log_msg(f"   ⚠️ Rate limit! Waiting {e.seconds}s...")
+                                await asyncio.sleep(e.seconds)
+                            except Exception as ex:
+                                ex_str = str(ex).lower()
+                                if 'database is locked' in ex_str:
+                                    log_msg(f"   ⚠️ DB locked during chat, waiting 5s...")
+                                    await asyncio.sleep(5)
+                                elif any(k in ex_str for k in ('invalid', 'user id', 'identifier', 'peer', 'no access', 'not found')):
+                                    log_msg(f"   ⚠️ {name} ({uid}) — unreachable, skipping...")
+                                else:
+                                    log_msg(f"   ❌ Failed to message {name}: {ex}")
+                        log_msg(f"✅ [{session}] Auto-Chat done! Sent: {total_sent}")
+
+
+
+            except Exception as e:
+                if 'database is locked' in str(e).lower():
+                    log_msg(f"⚠️ [{session}] DB locked — another task is using this session. Skipping for now.")
+                else:
+                    log_msg(f"❌ [{session}] Warming error: {e}")
+            finally:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+
+        if len(accounts) > 1:
+            between = random.uniform(30, 60)
+            log_msg(f"\n⏳ Switching account in {between:.0f}s...")
+            await asyncio.sleep(between)
+
+    log_msg(f"\n==========================================")
+    log_msg(f"🎉 ACCOUNT WARMER COMPLETED!")
+    log_msg(f"==========================================")
+
+@app.post("/api/warm/start")
+async def start_warm(req: WarmRequest, background_tasks: BackgroundTasks):
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="Select at least one account")
+    if not req.do_react and not req.do_chat:
+        raise HTTPException(status_code=400, detail="Select at least one action (React or Chat)")
+
+    background_tasks.add_task(
+        warm_account_worker,
+        req.accounts, req.do_react, req.do_chat,
+        req.reactions_per_group, req.messages_to_send,
+        req.react_delay, req.chat_delay
+    )
+    return {"status": "started", "accounts": len(req.accounts)}
 
 if __name__ == "__main__":
     import uvicorn

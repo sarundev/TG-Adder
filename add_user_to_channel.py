@@ -236,13 +236,14 @@ async def main():
             continue
             
         session_path = os.path.join(ACCOUNTS_DIR, session)
-        client = TelegramClient(session_path, API_ID, API_HASH,
-        device_model="iPhone 13 Pro Max",
-        system_version="15.5",
-        app_version="8.7.1",
-        lang_code="en",
-        system_lang_code="en"
-    )
+        client = TelegramClient(
+            session_path, API_ID, API_HASH,
+            device_model="iPhone 13 Pro Max",
+            system_version="15.5",
+            app_version="8.7.1",
+            lang_code="en",
+            system_lang_code="en"
+        )
         
         try:
             await client.connect()
@@ -283,7 +284,7 @@ async def main():
                 
                 # Apply custom randomized delay between successful/attempted invites
                 if i < len(targets) - 1:
-                    actual_delay = delay * __import__('random').uniform(0.8, 1.5)
+                    actual_delay = delay * random.uniform(0.8, 1.5)
                     print(f"   🕒 Waiting {actual_delay:.1f}s (randomized from {delay}s)...")
                     await asyncio.sleep(actual_delay)
 

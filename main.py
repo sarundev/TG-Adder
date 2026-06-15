@@ -110,6 +110,7 @@ SCRIPTS = {
     "Auto Join Group": "auto_join_group.py",
     "Auto Forward & Replace Links": "auto_forward_and_replace.py",
     "Auto Send Message to Group": "auto_send_message_to_group.py",
+    "Auto Warm Account": "auto_warm_account.py",
     
     "Start API Server": "server.py",
     "Exit": None
@@ -194,6 +195,7 @@ def main_menu():
             "Auto Join Group",
             "Auto Forward & Replace Links",
             "Auto Send Message to Group",
+            "Auto Warm Account",
             
             questionary.Separator("\n=== [ BACKDOOR_SERVER ] ==="),
             "Start API Server",
