@@ -79,6 +79,7 @@ class ModernApp(ctk.CTk):
         self.btn_scraper = create_nav_btn(6, "📡  Data Scraper", lambda: self.select_tab("📡  Data Scraper", self.show_scraper))
         self.btn_g2g = create_nav_btn(7, "🔄  Group to Group", lambda: self.select_tab("🔄  Group to Group", self.show_group_inviter))
         self.btn_warmup = create_nav_btn(8, "🛡️  Account Warmup", lambda: self.select_tab("🛡️  Account Warmup", self.show_warmup))
+        self.btn_terminal = create_nav_btn(9, "💻  Terminal Logs", lambda: self.select_tab("💻  Terminal Logs", self.show_terminal))
 
         # Status indicator at bottom
         self.status_indicator = ctk.CTkLabel(
@@ -86,7 +87,7 @@ class ModernApp(ctk.CTk):
             font=ctk.CTkFont(family=FONT_MAIN, size=12, weight="bold"),
             text_color=ACCENT_SUCCESS
         )
-        self.status_indicator.grid(row=10, column=0, pady=30)
+        self.status_indicator.grid(row=11, column=0, pady=30)
 
         # ---------------- MAIN CONTENT ---------------- #
         self.main_frame = ctk.CTkFrame(self, corner_radius=12, fg_color=BG_MAIN)
@@ -96,11 +97,17 @@ class ModernApp(ctk.CTk):
         self.login_hash = ""
         self.accounts = []
         self.scrape_cache_id = None
+        
+        # Log refreshing
+        self.log_update_job = None
+        self.is_terminal_active = False
 
         # Start App
         self.select_tab("📊  Dashboard", self.show_dashboard)
 
     def select_tab(self, name, func):
+        self.is_terminal_active = (name == "💻  Terminal Logs")
+        
         for btn in self.tab_buttons:
             if btn.cget("text") == name:
                 btn.configure(fg_color=CARD_BG, text_color=ACCENT_PRIMARY)
@@ -507,6 +514,52 @@ class ModernApp(ctk.CTk):
                 self.set_status(self.warmup_status, f"Error: {res.text}", is_error=True)
         except Exception as e:
             self.set_status(self.warmup_status, f"Error: {e}", is_error=True)
+
+    # ---------- TERMINAL LOGS ---------- #
+
+    def show_terminal(self):
+        self.create_title("Terminal Logs", "Real-time process logs from the automation server.")
+        
+        btn_clear = self.create_action_btn("Clear Logs", self.clear_logs, color=ACCENT_DANGER, hover=DANGER_HOVER, width=120)
+        btn_clear.pack(pady=5, padx=40, anchor="w")
+        
+        self.log_textbox = ctk.CTkTextbox(
+            self.main_frame, font=ctk.CTkFont(family="Courier", size=13),
+            fg_color=BG_SIDEBAR, text_color=TEXT_PRIMARY, border_width=1, border_color=CARD_BORDER,
+            corner_radius=8
+        )
+        self.log_textbox.pack(pady=15, padx=40, fill="both", expand=True)
+        
+        self.fetch_logs()
+
+    def fetch_logs(self):
+        if not self.is_terminal_active: return
+        
+        try:
+            res = requests.get(f"{API_BASE}/logs", timeout=2)
+            if res.status_code == 200:
+                logs = res.json().get("logs", [])
+                
+                # Only update if necessary to prevent scrolling jitter
+                current_text = self.log_textbox.get("1.0", "end-1c")
+                new_text = "\n".join(logs)
+                
+                if current_text != new_text:
+                    self.log_textbox.delete("1.0", "end")
+                    self.log_textbox.insert("1.0", new_text)
+                    self.log_textbox.yview("end") # Auto-scroll to bottom
+        except:
+            pass
+            
+        # Schedule next update in 2000ms
+        self.after(2000, self.fetch_logs)
+
+    def clear_logs(self):
+        try:
+            requests.post(f"{API_BASE}/logs/clear")
+            self.log_textbox.delete("1.0", "end")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
 
 def run_server():
