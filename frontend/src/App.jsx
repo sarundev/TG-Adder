@@ -104,9 +104,9 @@ function LicenseGate({ onUnlocked }) {
           }}>
             <Lock size={28} color="#a5b4fc" />
           </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', margin: 0 }}>TG Adder Suite</h1>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', margin: 0 }}>TG TELE168</h1>
           <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.88rem', marginTop: '6px' }}>
-            Enter your license key to continue
+            Enter your license key to continues
           </p>
         </div>
 
@@ -564,7 +564,7 @@ function MainApp({ onLogout }) {
     <div className="app-container">
       <aside className="sidebar glass-panel" style={{ borderRadius: 0, borderTop: 'none', borderBottom: 'none', borderLeft: 'none' }}>
         <div className="sidebar-logo">
-          <Send size={28} strokeWidth={2.5} /> TELE 168
+          <Send size={28} strokeWidth={2.5} /> TG TELE168
         </div>
         <nav>
           {['Dashboard', 'Add Account', 'Make Account Strong', 'Scraper', 'Join Group', 'Scrape & Add', 'Inviter', 'Terminal Logs'].map((item) => (
@@ -591,7 +591,7 @@ function MainApp({ onLogout }) {
         <header className="topbar">
           <div className="page-title animate-fade-in">
             <h1>{activeTab} Overview</h1>
-            <p>Your TELE 168 operations control center.</p>
+            <p>Your TG TELE168 operations control center.</p>
           </div>
           <div className="user-profile">
             <button className="notification-btn" onClick={fetchAccounts}><Activity size={20} /></button>
@@ -649,7 +649,7 @@ function MainApp({ onLogout }) {
                 <div className="stat-header">
                   <span>System Health</span><div className="stat-icon green"><Activity /></div>
                 </div>
-                <div className="stat-value" style={{ color: healthColor }}>{healthStatus}</div>
+                <div className="stat-value text-sm" style={{ color: healthColor }}>{healthStatus}</div>
               </div>
               <div className="stat-card glass-panel">
                 <div className="stat-header">
