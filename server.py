@@ -696,6 +696,12 @@ async def scrape_group(req: ScrapeRequest):
                     filtered_out += 1
                     continue
 
+            if f_inactive:
+                active = isinstance(user.status, (UserStatusOnline, UserStatusRecently, UserStatusLastWeek))
+                if active:
+                    filtered_out += 1
+                    continue
+
             members.append({
                 'id': user.id,
                 'username': user.username or '',
@@ -1068,7 +1074,6 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
             if confirmed:
                 log_msg(f"   ✅ [{session_name}] Successfully added (confirmed): {user_label}")
             else:
-                log_msg(f"   [DEBUG] Invite API result: {result}")
                 log_msg(
                     f"   📨 [{session_name}] Invite link sent to {user_label} "
                     f"(Telegram prevented direct-add due to their privacy settings or group join-request settings)."
