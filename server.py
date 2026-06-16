@@ -2159,7 +2159,7 @@ from fastapi.responses import FileResponse
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 if os.path.exists(FRONTEND_DIST):
-    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+    pass
     
     @app.get("/{catchall:path}")
     def serve_frontend(catchall: str):
