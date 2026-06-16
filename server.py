@@ -704,10 +704,10 @@ async def scrape_group(req: ScrapeRequest):
 
             members.append({
                 'id': user.id,
-                'username': user.username or '',
+                'username': f"@{user.username}" if user.username else '',
                 'first_name': user.first_name or '',
                 'last_name': user.last_name or '',
-                'phone': user.phone or '',
+                'phone': f"+{user.phone}" if user.phone else '',
                 'is_bot': 'Yes' if user.bot else 'No'
             })
 
