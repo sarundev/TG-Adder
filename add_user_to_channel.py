@@ -187,8 +187,8 @@ async def main():
         except KeyboardInterrupt:
             break
     
-    raw_members = "".join(lines)
-    member_list = [m.strip() for m in re.split(r'[\n,]+', raw_members) if m.strip()]
+    raw_members = "\n".join(lines)
+    member_list = [m.strip() for m in re.split(r'[\n,\s@]+', raw_members) if m.strip()]
     
     # Deduplicate member list
     member_list = list(set(member_list))

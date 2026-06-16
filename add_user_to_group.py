@@ -139,9 +139,9 @@ async def main():
         except KeyboardInterrupt:
             break
     
-    raw_members = "".join(lines)
+    raw_members = "\n".join(lines)
     # Split by comma or whitespace/newline and filter out empty strings
-    member_list = [m.strip() for m in re.split(r'[\n,]+', raw_members) if m.strip()]
+    member_list = [m.strip() for m in re.split(r'[\n,\s@]+', raw_members) if m.strip()]
     
     # Deduplicate member list
     member_list = list(set(member_list))
