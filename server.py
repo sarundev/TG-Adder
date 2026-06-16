@@ -1023,6 +1023,16 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
         # ── Step 1: Resolve user ──────────────────────────────────────────────
         if isinstance(user_or_id, User):
             user_entity = user_or_id
+        elif isinstance(user_or_id, str) and (user_or_id.startswith("+") or user_or_id.isdigit()):
+            from telethon.tl.functions.contacts import ImportContactsRequest
+            from telethon.tl.types import InputPhoneContact
+            phone_str = user_or_id if user_or_id.startswith("+") else "+" + user_or_id
+            log_msg(f"   📞 [{session_name}] Importing phone {phone_str} to bypass privacy...")
+            res = await client(ImportContactsRequest([InputPhoneContact(client_id=0, phone=phone_str, first_name="User", last_name="")]))
+            if getattr(res, 'users', []):
+                user_entity = res.users[0]
+            else:
+                raise ValueError(f"Telegram could not find a user for phone {phone_str}")
         else:
             user_entity = await client.get_entity(user_or_id)
 
@@ -1454,7 +1464,12 @@ async def start_inviter_csv(
     
     members = []
     for row in csv_reader:
-        if row.get("username"):
+        if row.get("phone"):
+            phone = row["phone"].strip()
+            if not phone.startswith("+"):
+                phone = "+" + phone
+            members.append(phone)
+        elif row.get("username"):
             members.append(row["username"])
         elif row.get("id"):
             members.append(int(row["id"]))
