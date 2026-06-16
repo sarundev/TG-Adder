@@ -1115,12 +1115,27 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
             log_msg(f"   ❌ [{session_name}] Failed to add {short_label}: {type(e).__name__} - {e}")
     return False
 
+async def safe_sleep(seconds: float, flag_key: str) -> bool:
+    """Sleeps for `seconds` but returns False immediately if the cancel flag is set."""
+    intervals = int(seconds / 0.5)
+    remainder = seconds % 0.5
+    for _ in range(intervals):
+        if GLOBAL_CANCEL_FLAGS.get(flag_key):
+            return False
+        await asyncio.sleep(0.5)
+    if remainder > 0:
+        if GLOBAL_CANCEL_FLAGS.get(flag_key):
+            return False
+        await asyncio.sleep(remainder)
+    return True
+
 async def invite_task_worker(accounts: List[str], target_group: str, members: List[str], delay: float):
     log_msg(f"\n==========================================")
     log_msg(f"🚀 INVITATION WEB TASK STARTED")
     log_msg(f"Targets: {len(members)} users | Accounts: {len(accounts)} | Delay: {delay}s")
     log_msg(f"==========================================")
     
+    GLOBAL_CANCEL_FLAGS["inviter"] = False
     GLOBAL_CANCEL_FLAGS["inviter"] = False
 
     target_id = parse_identifier(target_group)
@@ -1185,14 +1200,16 @@ async def invite_task_worker(accounts: List[str], target_group: str, members: Li
                     
                 if isinstance(res, (int, float)) and not isinstance(res, bool):
                     log_msg(f"   🕒 Waiting {res}s due to rate limit...")
-                    await asyncio.sleep(res)
+                    if not await safe_sleep(res, "inviter"):
+                        break
                     res_retry = await add_single_user(client, target_entity, user, session)
                     if res_retry == "RESTRICTED":
                         log_msg(f"   ⚠️ [{session}] Safety breakout triggered to prevent ban.")
                         break
                         
                 if i < len(targets) - 1:
-                    await asyncio.sleep(delay * random.uniform(0.8, 1.5))
+                    if not await safe_sleep(delay * random.uniform(0.8, 1.5), "inviter"):
+                        break
                     
         except Exception as e:
             log_msg(f"❌ [{session}] Loop error: {e}")
@@ -1344,14 +1361,16 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
                     
                 if isinstance(res, (int, float)) and not isinstance(res, bool):
                     log_msg(f"   🕒 Waiting {res}s due to rate limit...")
-                    await asyncio.sleep(res)
+                    if not await safe_sleep(res, "inviter"):
+                        break
                     res_retry = await add_single_user(client, target_entity, user_obj, session)
                     if res_retry == "RESTRICTED":
                         log_msg(f"   ⚠️ [{session}] Safety breakout triggered to prevent ban.")
                         break
                         
                 if i < len(targets) - 1:
-                    await asyncio.sleep(delay * random.uniform(0.8, 1.5))
+                    if not await safe_sleep(delay * random.uniform(0.8, 1.5), "inviter"):
+                        break
                     
         except Exception as e:
             log_msg(f"❌ [{session}] Loop error: {e}")
@@ -1462,7 +1481,13 @@ async def invite_by_username_worker(accounts: List[str], target_group: str, user
         acc = accounts[idx % len(accounts)]
         assignments[acc].append(username)
 
+    GLOBAL_CANCEL_FLAGS["inviter"] = False
+
     for session in accounts:
+        if GLOBAL_CANCEL_FLAGS.get("inviter"):
+            log_msg("🛑 Task was manually cancelled.")
+            break
+
         targets = assignments[session]
         if not targets:
             continue
@@ -1493,6 +1518,10 @@ async def invite_by_username_worker(accounts: List[str], target_group: str, user
                 continue
 
             for i, username in enumerate(targets):
+                if GLOBAL_CANCEL_FLAGS.get("inviter"):
+                    log_msg(f"🛑 [{session}] Inviter stopped mid-loop.")
+                    break
+
                 # Normalize username — strip @ if present
                 clean_username = username.lstrip('@').strip()
                 if not clean_username:
@@ -1507,14 +1536,16 @@ async def invite_by_username_worker(accounts: List[str], target_group: str, user
 
                 if isinstance(res, (int, float)) and not isinstance(res, bool):
                     log_msg(f"   🕒 Waiting {res}s due to rate limit...")
-                    await asyncio.sleep(res)
+                    if not await safe_sleep(res, "inviter"):
+                        break
                     res_retry = await add_single_user(client, target_entity, clean_username, session)
                     if res_retry == "RESTRICTED":
                         log_msg(f"   ⚠️ [{session}] Safety breakout triggered to prevent ban.")
                         break
 
                 if i < len(targets) - 1:
-                    await asyncio.sleep(delay * random.uniform(0.8, 1.5))
+                    if not await safe_sleep(delay * random.uniform(0.8, 1.5), "inviter"):
+                        break
 
         except Exception as e:
             log_msg(f"❌ [{session}] Loop error: {e}")
