@@ -200,6 +200,7 @@ class ScrapeRequest(BaseModel):
     filter_has_phone: bool = False      # Only users with visible phone
     filter_no_bots: bool = True         # Exclude bots (default ON)
     filter_active_recently: bool = False  # Only recently-active users
+    filter_inactive: bool = False         # Only inactive users (offline > 1 week)
     filter_has_name: bool = False       # Only users with a real first name
 
 class AccountRequest(BaseModel):
@@ -619,6 +620,7 @@ async def scrape_group(req: ScrapeRequest):
     f_phone          = req.filter_has_phone
     f_no_bots        = req.filter_no_bots
     f_active_recently = req.filter_active_recently
+    f_inactive       = req.filter_inactive
     f_has_name       = req.filter_has_name
 
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
@@ -1066,10 +1068,10 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
             if confirmed:
                 log_msg(f"   ✅ [{session_name}] Successfully added (confirmed): {user_label}")
             else:
+                log_msg(f"   [DEBUG] Invite API result: {result}")
                 log_msg(
-                    f"   ⚠️ [{session_name}] {user_label} was NOT directly added — "
-                    f"Telegram sent them an invite link notification instead. "
-                    f"(Group may have join-request approval enabled, or their privacy blocked direct add.)"
+                    f"   📨 [{session_name}] Invite link sent to {user_label} "
+                    f"(Telegram prevented direct-add due to their privacy settings or group join-request settings)."
                 )
             return confirmed
 
