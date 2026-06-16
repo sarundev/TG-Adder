@@ -1090,6 +1090,7 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
         log_msg(f"   ❌ [{session_name}] {user_label} is deactivated or was kicked from this group — skipping.")
     except UserBannedInChannelError:
         log_msg(f"   ❌ [{session_name}] The ACCOUNT is banned from this group, OR {user_label} is banned. (Likely the account is banned).")
+        return "RESTRICTED"
     except UsersTooMuchError:
         log_msg(f"   ❌ [{session_name}] Group member limit reached!")
         return "RESTRICTED"
@@ -1107,8 +1108,11 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
     except BotGroupsBlockedError:
         log_msg(f"   ❌ [{session_name}] {user_label} is a bot blocked from groups.")
     except Exception as e:
-        short_label = user_label if isinstance(user_label, str) else "User"
-        log_msg(f"   ❌ [{session_name}] Failed to add {short_label}: {type(e).__name__} - {e}")
+        if isinstance(e, ValueError) and "Could not find the input entity" in str(e):
+            log_msg(f"   ❌ [{session_name}] Unknown user. Make sure the account has seen this user before (e.g. they share a chat).")
+        else:
+            short_label = user_label if isinstance(user_label, str) else "User"
+            log_msg(f"   ❌ [{session_name}] Failed to add {short_label}: {type(e).__name__} - {e}")
     return False
 
 async def invite_task_worker(accounts: List[str], target_group: str, members: List[str], delay: float):
@@ -1365,6 +1369,12 @@ async def run_worker_safe(worker_func, *args):
         await worker_func(*args)
     finally:
         IS_INVITING = False
+
+@app.post("/api/inviter/stop")
+async def stop_inviter():
+    GLOBAL_CANCEL_FLAGS["inviter"] = True
+    log_msg("🛑 Stop signal received. Tasks will abort gracefully...")
+    return {"status": "stopped"}
 
 @app.post("/api/inviter/invite-group")
 async def start_group_to_group_inviter(req: GroupToGroupInviteRequest, background_tasks: BackgroundTasks):
