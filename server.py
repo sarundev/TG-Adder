@@ -1032,7 +1032,8 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
             if getattr(res, 'users', []):
                 user_entity = res.users[0]
             else:
-                raise ValueError(f"Telegram could not find a user for phone {phone_str}")
+                log_msg(f"   ⚠️ [{session_name}] Phone {phone_str} is not on Telegram OR their privacy blocks discovery.")
+                return False
         else:
             user_entity = await client.get_entity(user_or_id)
 
