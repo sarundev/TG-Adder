@@ -69,6 +69,7 @@ class HighTechApp(ctk.CTk):
         self.btn_join = create_nav_btn(5, "🔗  GROUP SYNC", lambda: self.select_tab("🔗  GROUP SYNC", self.show_join))
         self.btn_scraper = create_nav_btn(6, "📡  DATA SCRAPER", lambda: self.select_tab("📡  DATA SCRAPER", self.show_scraper))
         self.btn_g2g = create_nav_btn(7, "🔄  GROUP INJECTOR", lambda: self.select_tab("🔄  GROUP INJECTOR", self.show_group_inviter))
+        self.btn_warmup = create_nav_btn(8, "🛡️  NODE WARMUP", lambda: self.select_tab("🛡️  NODE WARMUP", self.show_warmup))
 
         # Status indicator at bottom
         self.status_indicator = ctk.CTkLabel(
@@ -76,7 +77,7 @@ class HighTechApp(ctk.CTk):
             font=ctk.CTkFont(family="Courier", size=11, weight="bold"),
             text_color="#39FF14"
         )
-        self.status_indicator.grid(row=9, column=0, pady=20)
+        self.status_indicator.grid(row=10, column=0, pady=20)
 
         # ---------------- MAIN CONTENT ---------------- #
         self.main_frame = ctk.CTkFrame(self, corner_radius=15, fg_color=BG_MAIN)
@@ -187,7 +188,7 @@ class HighTechApp(ctk.CTk):
         if not phone: return
         self.login_status.configure(text=">> INITIATING HANDSHAKE...")
         try:
-            res = requests.post(f"{API_BASE}/login/request_code", json={"phone": phone})
+            res = requests.post(f"{API_BASE}/accounts/login/request", json={"phone": phone})
             if res.status_code == 200:
                 data = res.json()
                 self.login_hash = data.get("phone_code_hash", "")
@@ -205,7 +206,7 @@ class HighTechApp(ctk.CTk):
         self.login_status.configure(text=">> VERIFYING CREDENTIALS...")
         try:
             payload = {"phone": self.login_phone, "code": code, "phone_code_hash": self.login_hash, "password": pwd if pwd else None}
-            res = requests.post(f"{API_BASE}/login/confirm", json=payload)
+            res = requests.post(f"{API_BASE}/accounts/login/confirm", json=payload)
             if res.status_code == 200:
                 self.login_status.configure(text=">> NODE AUTHORIZED SUCCESSFULLY.", text_color="#39FF14")
                 self.load_accounts() # refresh accounts
@@ -284,7 +285,7 @@ class HighTechApp(ctk.CTk):
     def start_join(self):
         if not self.accounts: return
         try:
-            res = requests.post(f"{API_BASE}/join/start", json={
+            res = requests.post(f"{API_BASE}/join-group", json={
                 "accounts": self.accounts,
                 "target_group": self.join_group_entry.get().strip(),
                 "delay": 15
@@ -417,6 +418,32 @@ class HighTechApp(ctk.CTk):
                 self.g2g_status.configure(text=f">> ERROR: {res.text}", text_color="#FF3333")
         except Exception as e:
             self.g2g_status.configure(text=f">> CRITICAL ERROR: {str(e)}", text_color="#FF3333")
+
+    def show_warmup(self):
+        self.create_title("NODE WARMUP (ANTI-BAN)")
+        
+        info = ctk.CTkLabel(self.main_frame, text="Warm up nodes by auto-chatting and reacting to look like humans.", font=ctk.CTkFont(family="Helvetica", size=14), text_color=TEXT_MUTED)
+        info.pack(pady=10, padx=40, anchor="w")
+
+        self.warmup_status = ctk.CTkLabel(self.main_frame, text="", font=ctk.CTkFont(family="Courier", size=14))
+        self.warmup_status.pack(pady=10)
+
+        btn_start = self.create_action_btn("▶ START WARMUP ALL NODES", self.start_warmup, color="#1F6FEB", hover="#388BFD", text_color="#FFF")
+        btn_start.pack(pady=20, padx=40, fill="x")
+
+    def start_warmup(self):
+        if not self.accounts: return
+        try:
+            res = requests.post(f"{API_BASE}/warm/start", json={
+                "accounts": self.accounts,
+                "do_react": True, "do_chat": True, "reactions_per_group": 3, "messages_to_send": 3, "react_delay": 10.0, "chat_delay": 20.0
+            })
+            if res.status_code == 200:
+                self.warmup_status.configure(text=">> WARMUP INITIATED. WATCH LOGS.", text_color="#39FF14")
+            else:
+                self.warmup_status.configure(text=f">> ERROR: {res.text}", text_color="#FF3333")
+        except Exception as e:
+            self.warmup_status.configure(text=f">> CRITICAL ERROR: {str(e)}", text_color="#FF3333")
 
 def run_server():
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")
