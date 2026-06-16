@@ -564,7 +564,7 @@ function MainApp({ onLogout }) {
     <div className="app-container">
       <aside className="sidebar glass-panel" style={{ borderRadius: 0, borderTop: 'none', borderBottom: 'none', borderLeft: 'none' }}>
         <div className="sidebar-logo">
-          <Send size={28} strokeWidth={2.5} /> TeleMaster
+          <Send size={28} strokeWidth={2.5} /> TELE 168
         </div>
         <nav>
           {['Dashboard', 'Add Account', 'Make Account Strong', 'Scraper', 'Join Group', 'Scrape & Add', 'Inviter', 'Terminal Logs'].map((item) => (
@@ -591,7 +591,7 @@ function MainApp({ onLogout }) {
         <header className="topbar">
           <div className="page-title animate-fade-in">
             <h1>{activeTab} Overview</h1>
-            <p>Your Telegram Suite operations control center.</p>
+            <p>Your TELE 168 operations control center.</p>
           </div>
           <div className="user-profile">
             <button className="notification-btn" onClick={fetchAccounts}><Activity size={20} /></button>
