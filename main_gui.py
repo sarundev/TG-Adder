@@ -2,8 +2,10 @@ import threading
 import time
 import requests
 import uvicorn
+import csv
+import os
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from server import app
 
 API_BASE = "http://127.0.0.1:8000/api"
@@ -21,16 +23,16 @@ class HighTechApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("TELE 168 - NEURAL COMMAND CENTER")
-        self.geometry("1000x650")
+        self.geometry("1100x750")
         self.configure(fg_color=BG_MAIN)
         
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
         # ---------------- SIDEBAR ---------------- #
-        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color=BG_SIDEBAR)
+        self.sidebar_frame = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=BG_SIDEBAR)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(6, weight=1)
+        self.sidebar_frame.grid_rowconfigure(8, weight=1)
 
         # Logo / Title
         self.logo_label = ctk.CTkLabel(
@@ -65,6 +67,8 @@ class HighTechApp(ctk.CTk):
         self.btn_add = create_nav_btn(3, "➕  ADD NODE", lambda: self.select_tab("➕  ADD NODE", self.show_add_account))
         self.btn_inviter = create_nav_btn(4, "🚀  MASS INJECTOR", lambda: self.select_tab("🚀  MASS INJECTOR", self.show_inviter))
         self.btn_join = create_nav_btn(5, "🔗  GROUP SYNC", lambda: self.select_tab("🔗  GROUP SYNC", self.show_join))
+        self.btn_scraper = create_nav_btn(6, "📡  DATA SCRAPER", lambda: self.select_tab("📡  DATA SCRAPER", self.show_scraper))
+        self.btn_g2g = create_nav_btn(7, "🔄  GROUP INJECTOR", lambda: self.select_tab("🔄  GROUP INJECTOR", self.show_group_inviter))
 
         # Status indicator at bottom
         self.status_indicator = ctk.CTkLabel(
@@ -72,7 +76,7 @@ class HighTechApp(ctk.CTk):
             font=ctk.CTkFont(family="Courier", size=11, weight="bold"),
             text_color="#39FF14"
         )
-        self.status_indicator.grid(row=7, column=0, pady=20)
+        self.status_indicator.grid(row=9, column=0, pady=20)
 
         # ---------------- MAIN CONTENT ---------------- #
         self.main_frame = ctk.CTkFrame(self, corner_radius=15, fg_color=BG_MAIN)
@@ -81,6 +85,7 @@ class HighTechApp(ctk.CTk):
         self.login_phone = ""
         self.login_hash = ""
         self.accounts = []
+        self.scrape_cache_id = None
 
         # Start App
         self.select_tab("⚡  DASHBOARD", self.show_dashboard)
@@ -203,6 +208,7 @@ class HighTechApp(ctk.CTk):
             res = requests.post(f"{API_BASE}/login/confirm", json=payload)
             if res.status_code == 200:
                 self.login_status.configure(text=">> NODE AUTHORIZED SUCCESSFULLY.", text_color="#39FF14")
+                self.load_accounts() # refresh accounts
             else:
                 self.login_status.configure(text=f">> REJECTED: {res.text}", text_color="#FF3333")
         except Exception as e:
@@ -290,6 +296,127 @@ class HighTechApp(ctk.CTk):
         except Exception as e:
             self.join_status.configure(text=f">> CRITICAL ERROR: {str(e)}", text_color="#FF3333")
 
+    def show_scraper(self):
+        self.create_title("DATA SCRAPER")
+        
+        self.scrape_group_entry = self.create_input("Source Group ID (@groupname)")
+        self.scrape_group_entry.pack(pady=10, fill="x", padx=40)
+        
+        # Checkbox for Only Usernames
+        self.chk_usernames = ctk.CTkCheckBox(
+            self.main_frame, text="Extract ONLY users with @usernames", 
+            font=ctk.CTkFont(family="Helvetica", size=14),
+            fg_color=ACCENT_COLOR, text_color=TEXT_COLOR
+        )
+        self.chk_usernames.select()
+        self.chk_usernames.pack(pady=10, padx=40, anchor="w")
+
+        btn_scrape = self.create_action_btn("▶ EXTRACT ENTITIES", self.start_scrape)
+        btn_scrape.pack(pady=10, padx=40, fill="x")
+        
+        self.scrape_status = ctk.CTkLabel(self.main_frame, text="", font=ctk.CTkFont(family="Courier", size=14), text_color=ACCENT_COLOR)
+        self.scrape_status.pack(pady=10)
+        
+        self.btn_export = self.create_action_btn("⬇ DOWNLOAD CSV", self.export_scrape, color="#1F6FEB", hover="#388BFD", text_color="#FFF")
+        # Hidden initially
+        
+    def start_scrape(self):
+        if not self.accounts:
+            messagebox.showerror("SYSTEM ERROR", "NO NODES ACTIVE. NAVIGATE TO DASHBOARD.")
+            return
+            
+        group = self.scrape_group_entry.get().strip()
+        if not group: return
+        
+        self.scrape_status.configure(text=">> INITIATING SCRAPE... THIS MAY TAKE A MINUTE...", text_color=ACCENT_COLOR)
+        self.btn_export.pack_forget()
+        
+        # Scrape runs synchronously in backend (it can take time, so we should run it in a thread to not freeze UI)
+        def scrape_task():
+            try:
+                res = requests.post(f"{API_BASE}/scraper/scrape", json={
+                    "account": self.accounts[0],
+                    "group_url": group,
+                    "filter_has_username": bool(self.chk_usernames.get()),
+                    "filter_no_bots": True,
+                    "filter_has_phone": False,
+                    "filter_active_recently": False,
+                    "filter_inactive": False,
+                    "filter_has_name": False
+                })
+                if res.status_code == 200:
+                    data = res.json()
+                    self.scrape_cache_id = data.get("cache_id")
+                    count = data.get("count", 0)
+                    self.scrape_status.configure(text=f">> SUCCESS. EXTRACTED {count} ENTITIES.", text_color="#39FF14")
+                    self.btn_export.pack(pady=10, padx=40, fill="x")
+                else:
+                    self.scrape_status.configure(text=f">> ERROR: {res.text}", text_color="#FF3333")
+            except Exception as e:
+                self.scrape_status.configure(text=f">> CRITICAL ERROR: {str(e)}", text_color="#FF3333")
+                
+        threading.Thread(target=scrape_task, daemon=True).start()
+
+    def export_scrape(self):
+        if not self.scrape_cache_id: return
+        try:
+            res = requests.get(f"{API_BASE}/scraper/export/{self.scrape_cache_id}")
+            if res.status_code == 200:
+                save_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")], title="Save Scraped Data")
+                if save_path:
+                    with open(save_path, "wb") as f:
+                        f.write(res.content)
+                    self.scrape_status.configure(text=f">> EXPORT SAVED TO {save_path}", text_color="#39FF14")
+        except Exception as e:
+            self.scrape_status.configure(text=f">> ERROR SAVING CSV: {str(e)}", text_color="#FF3333")
+
+    def show_group_inviter(self):
+        self.create_title("GROUP TO GROUP INJECTOR")
+        
+        self.source_group_entry = self.create_input("Source Group ID (Scrape From)")
+        self.source_group_entry.pack(pady=10, fill="x", padx=40)
+        
+        self.target_group_entry = self.create_input("Target Group ID (Inject To)")
+        self.target_group_entry.pack(pady=10, fill="x", padx=40)
+        
+        self.delay_entry = self.create_input("Execution Delay Interval (Seconds)")
+        self.delay_entry.insert(0, "15.0")
+        self.delay_entry.pack(pady=10, fill="x", padx=40)
+
+        btn_start = self.create_action_btn("▶ START GROUP-TO-GROUP INJECTION", self.start_group_inviter, color="#39FF14", hover="#32CD32")
+        btn_start.pack(pady=20, padx=40, fill="x")
+        
+        btn_stop = self.create_action_btn("■ ABORT PROTOCOL (EMERGENCY STOP)", self.stop_inviter, color="#FF003C", hover="#D90033", text_color="#FFF")
+        btn_stop.pack(pady=5, padx=40, fill="x")
+
+        self.g2g_status = ctk.CTkLabel(self.main_frame, text="", font=ctk.CTkFont(family="Courier", size=14))
+        self.g2g_status.pack(pady=10)
+
+    def start_group_inviter(self):
+        if not self.accounts:
+            messagebox.showerror("SYSTEM ERROR", "NO NODES ACTIVE.")
+            return
+            
+        source = self.source_group_entry.get().strip()
+        target = self.target_group_entry.get().strip()
+        delay = float(self.delay_entry.get() or 15)
+        
+        if not source or not target: return
+        
+        try:
+            res = requests.post(f"{API_BASE}/inviter/invite-group", json={
+                "accounts": self.accounts,
+                "primary_account": self.accounts[0],
+                "source_group": source,
+                "target_group": target,
+                "delay": delay
+            })
+            if res.status_code == 200:
+                self.g2g_status.configure(text=">> GROUP INJECTION TASK STARTED.", text_color="#39FF14")
+            else:
+                self.g2g_status.configure(text=f">> ERROR: {res.text}", text_color="#FF3333")
+        except Exception as e:
+            self.g2g_status.configure(text=f">> CRITICAL ERROR: {str(e)}", text_color="#FF3333")
 
 def run_server():
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")
