@@ -1298,7 +1298,7 @@ function MainApp({ onLogout }) {
                       <input type="checkbox" checked={saWorkerSelectAll}
                         onChange={e => handleSaToggleAll(e.target.checked)}
                         style={{ accentColor: '#6366f1' }} />
-                      All
+                      Select All
                     </label>
                   </div>
                 </div>
@@ -1401,7 +1401,7 @@ function MainApp({ onLogout }) {
                         <input type="checkbox" checked={inviterSelectAll}
                           onChange={e => handleInviterToggleAll(e.target.checked)}
                           style={{ accentColor: '#10b981' }} />
-                        All
+                        Select All
                       </label>
                     </div>
                   </div>
@@ -1493,7 +1493,7 @@ function MainApp({ onLogout }) {
                         <input type="checkbox" checked={inviterSelectAll}
                           onChange={e => handleInviterToggleAll(e.target.checked)}
                           style={{ accentColor: '#6366f1' }} />
-                        All
+                        Select All
                       </label>
                     </div>
                   </div>
