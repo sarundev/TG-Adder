@@ -463,7 +463,7 @@ function MainApp({ onLogout }) {
   const handleInviteByUsername = async (e) => {
     e.preventDefault();
     if (inviterAccounts.length === 0) { setErrorMsg('Select at least one account'); return; }
-    const lines = usernameInput.split(/[\n,]+/).map(u => u.trim()).filter(Boolean);
+    const lines = usernameInput.split(/[\n,\s@]+/).map(u => u.trim()).filter(Boolean);
     if (lines.length === 0) { setErrorMsg('Please enter at least one username'); return; }
     setLoading(true); setErrorMsg('');
     try {
@@ -1471,7 +1471,7 @@ function MainApp({ onLogout }) {
                     One per line or comma-separated. The <code>@</code> prefix is optional.
                     {usernameInput.trim() && (
                       <b style={{ color: '#a5b4fc', marginLeft: '8px' }}>
-                        {usernameInput.split(/[\n,]+/).map(u => u.trim()).filter(Boolean).length} username(s) detected
+                        {usernameInput.split(/[\n,\s@]+/).map(u => u.trim()).filter(Boolean).length} username(s) detected
                       </b>
                     )}
                   </div>
