@@ -885,6 +885,12 @@ class ModernApp(ctk.CTk):
                 messagebox.showerror("Error", f"Failed to save file:\n{str(e)}")
 
 def run_server():
+    import sys
+    import os
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")
 
 if __name__ == "__main__":
