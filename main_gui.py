@@ -11,6 +11,7 @@ from tkinter import messagebox, filedialog
 from server import app
 
 API_BASE = "http://127.0.0.1:8000/api"
+LICENSE_API_BASE = "https://web-production-89e12.up.railway.app/api"
 
 # Modern Professional SaaS Theme Colors
 BG_MAIN = "#121212"
@@ -126,7 +127,7 @@ class ModernApp(ctk.CTk):
                 self.show_license_login()
                 return
             
-            res = requests.post(f"{API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=3)
+            res = requests.post(f"{LICENSE_API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=3)
             if res.status_code == 200:
                 self.unlock_app()
             else:
@@ -174,7 +175,7 @@ class ModernApp(ctk.CTk):
             self.update()
             
             try:
-                res = requests.post(f"{API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=5)
+                res = requests.post(f"{LICENSE_API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=5)
                 if res.status_code == 200:
                     with open("client_license.txt", "w") as f:
                         f.write(token)
