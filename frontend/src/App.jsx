@@ -1,47 +1,66 @@
-import React, { useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
+import React, { useState, useEffect } from 'react';
 import './index.css';
 
 function App() {
   const [buying, setBuying] = useState(false);
-  const [checkoutData, setCheckoutData] = useState(null);
 
-  const handleBuy = async (duration) => {
-    if (buying) return;
-    setBuying(true);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      const duration = params.get('duration') || '1_month';
+      issueLicenseAfterPayment(duration);
+    }
+  }, []);
+
+  const issueLicenseAfterPayment = async (duration) => {
     try {
-      const res = await fetch('/api/license/buy', {
+      const res = await fetch('/api/license/issue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ duration })
       });
       const data = await res.json();
-      
       if (data.status === 'success') {
-        setCheckoutData(data);
+        const blob = new Blob([`Your TG TELE168 License Key:\n\n${data.token}\n\nKeep this safe. Enter it in the Desktop app to unlock it.`], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'TG_TELE168_License.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        window.history.replaceState({}, document.title, window.location.pathname);
+        alert('Payment Complete! License key downloaded.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to issue license after payment.');
+    }
+  };
+
+  const handleBuy = async (duration) => {
+    if (buying) return;
+    setBuying(true);
+    try {
+      const success_url = window.location.origin + window.location.pathname + "?success=true&duration=" + duration;
+      const res = await fetch('/api/license/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration, success_url })
+      });
+      const data = await res.json();
+      
+      if (data.status === 'redirect') {
+        window.location.href = data.checkout_url;
       } else {
-        alert('Purchase failed: ' + data.detail);
+        alert('Purchase failed: ' + (data.detail || data.message));
       }
     } catch (e) {
       alert('Error connecting to payment server.');
     }
     setBuying(false);
-  };
-
-  const completePurchase = () => {
-    if (!checkoutData) return;
-    const blob = new Blob([`Your TG TELE168 License Key:\n\n${checkoutData.token}\n\nKeep this safe. Enter it in the Desktop app to unlock it.`], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'TG_TELE168_License.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    setCheckoutData(null);
-    alert('Payment Complete! License key downloaded.');
   };
 
   return (
@@ -195,31 +214,6 @@ function App() {
           </div>
         </div>
       </section>
-
-      {/* Checkout Modal */}
-      {checkoutData && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>Scan to Pay (KHQR)</h2>
-            <p>Scan the QR code below using any Cambodian bank app (ABA, ACLEDA, Bakong, etc.) to complete your purchase of <strong>${checkoutData.amount}</strong>.</p>
-            
-            <div className="qr-container" style={{ margin: '2rem 0', display: 'flex', justifyContent: 'center' }}>
-              <div style={{ background: 'white', padding: '16px', borderRadius: '12px' }}>
-                <QRCodeSVG value={checkoutData.khqr_string} size={250} level="M" />
-              </div>
-            </div>
-
-            <p style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: '1.5rem' }}>
-              Once you have scanned and completed the payment on your phone, click the button below to download your license.
-            </p>
-            
-            <div className="btn-group">
-              <button className="btn btn-secondary" onClick={() => setCheckoutData(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={completePurchase}>I Have Paid</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <footer className="footer">
         <p>&copy; {new Date().getFullYear()} TelegramSuite. All rights reserved.</p>

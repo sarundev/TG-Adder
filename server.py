@@ -469,33 +469,49 @@ def generate_license(req: LicenseGenerateRequest):
 
 class LicenseBuyRequest(BaseModel):
     duration: str
+    success_url: str
 
 @app.post("/api/license/buy")
 def buy_license(req: LicenseBuyRequest):
-    import uuid
-    from bakong_khqr import KHQR
+    import time
+    import hashlib
+    import urllib.parse
     
-    # User Profile ID and SecretID for payment gateway verification
+    # User Profile ID and SecretID for khqr.cc
     profile_id = "pNiGKZdBf8OMDhiIiRa5TmzCZiYJ16tB"
-    secret_id = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
+    secret_key = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
     
-    khqr = KHQR()
     price_map = {"1_month": 1.0, "3_months": 69.0, "lifetime": 199.0}
     price = price_map.get(req.duration, 1.0)
     
-    try:
-        # We try to use the Profile ID as the Bakong Account ID/Merchant ID
-        khqr_string = khqr.create_qr(
-            account_id=profile_id,
-            merchant_name="TG TELE168 App",
-            merchant_city="Phnom Penh",
-            amount=price,
-            currency="USD",
-            store_label="TG License"
-        )
-    except Exception:
-        khqr_string = "00020101021229340011bakong@aba01150000000000000005802KH5907MOCK_QR6010PHNOM PENH6224011112345678900705MOCK16304A1B2"
+    transaction_id = f"ORD_{int(time.time())}"
+    success_url = req.success_url
+    remark = f"License_{req.duration}"
     
+    raw_string = f"{secret_key}{transaction_id}{price}{success_url}{remark}"
+    hash_val = hashlib.sha1(raw_string.encode('utf-8')).hexdigest()
+    
+    params = {
+        "transaction_id": transaction_id,
+        "amount": price,
+        "success_url": success_url,
+        "remark": remark,
+        "hash": hash_val
+    }
+    
+    checkout_url = f"https://khqr.cc/api/payment/request/{profile_id}?{urllib.parse.urlencode(params)}"
+    
+    return {
+        "status": "redirect", 
+        "checkout_url": checkout_url
+    }
+
+class LicenseIssueRequest(BaseModel):
+    duration: str
+
+@app.post("/api/license/issue")
+def issue_license(req: LicenseIssueRequest):
+    import uuid
     new_token = f"TLG-{str(uuid.uuid4()).upper()[:8]}-{str(uuid.uuid4()).upper()[:8]}"
     
     duration_map = {
@@ -515,10 +531,7 @@ def buy_license(req: LicenseBuyRequest):
     
     return {
         "status": "success", 
-        "token": new_token, 
-        "khqr_string": khqr_string,
-        "amount": price,
-        "message": "Purchase successful! Your license key has been generated."
+        "token": new_token
     }
 
 @app.get("/api/license/list")
