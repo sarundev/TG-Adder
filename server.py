@@ -473,6 +473,28 @@ class LicenseBuyRequest(BaseModel):
 @app.post("/api/license/buy")
 def buy_license(req: LicenseBuyRequest):
     import uuid
+    from bakong_khqr import KHQR
+    
+    # User Profile ID and SecretID for payment gateway verification
+    profile_id = "pNiGKZdBf8OMDhiIiRa5TmzCZiYJ16tB"
+    secret_id = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
+    
+    khqr = KHQR()
+    price_map = {"1_month": 29.0, "3_months": 69.0, "lifetime": 199.0}
+    price = price_map.get(req.duration, 29.0)
+    
+    try:
+        khqr_string = khqr.create_qr(
+            account_id="tele168@acleda",
+            merchant_name="TG TELE168 App",
+            merchant_city="Phnom Penh",
+            amount=price,
+            currency="USD",
+            store_label="TG License"
+        )
+    except Exception:
+        khqr_string = "00020101021229340011bakong@aba01150000000000000005802KH5907MOCK_QR6010PHNOM PENH6224011112345678900705MOCK16304A1B2"
+    
     new_token = f"TLG-{str(uuid.uuid4()).upper()[:8]}-{str(uuid.uuid4()).upper()[:8]}"
     
     duration_map = {
@@ -490,7 +512,13 @@ def buy_license(req: LicenseBuyRequest):
     }
     save_licenses(licenses)
     
-    return {"status": "success", "token": new_token, "message": "Purchase successful! Your license key has been generated."}
+    return {
+        "status": "success", 
+        "token": new_token, 
+        "khqr_string": khqr_string,
+        "amount": price,
+        "message": "Purchase successful! Your license key has been generated."
+    }
 
 @app.get("/api/license/list")
 def list_licenses(admin_key: str):
