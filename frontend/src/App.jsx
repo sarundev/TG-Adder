@@ -95,8 +95,8 @@ function App() {
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
               </svg>
             </div>
-            <h3>Automated Joiner</h3>
-            <p>Force all of your connected accounts to instantly join any public or private group link simultaneously.</p>
+            <h3>Joiner & Bot Clicker</h3>
+            <p>Force all connected accounts to instantly join any public or private group link, or mass-start specific Telegram bots simultaneously.</p>
           </div>
 
           <div className="feature-card">
