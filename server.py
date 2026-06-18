@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 import io
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from telethon import TelegramClient, events, functions
@@ -71,6 +72,23 @@ from telethon.errors import (
 )
 
 app = FastAPI(title="Telegram Suite API")
+
+import os
+# Mount frontend dist if exists
+frontend_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+downloads_path = os.path.join(os.path.dirname(__file__), "downloads")
+os.makedirs(downloads_path, exist_ok=True)
+
+if os.path.exists(frontend_path):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
+    
+app.mount("/downloads", StaticFiles(directory=downloads_path), name="downloads")
+
+@app.get("/")
+def serve_frontend():
+    if os.path.exists(frontend_path):
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+    return {"message": "Frontend not built yet"}
 
 # Enable CORS for React dev server
 app.add_middleware(
@@ -506,12 +524,11 @@ async def login_confirm(req: LoginConfirm):
     client = PENDING_CLIENTS[phone]
     
     try:
-        if not password:
-            try:
-                await client.sign_in(phone=phone, code=code)
-            except SessionPasswordNeededError:
+        try:
+            await client.sign_in(phone=phone, code=code)
+        except SessionPasswordNeededError:
+            if not password:
                 return {"status": "password_required", "phone": phone}
-        else:
             await client.sign_in(password=password)
             
         user = await client.get_me()
@@ -647,7 +664,7 @@ async def scrape_group(req: ScrapeRequest):
             if not keyword:
                 raise HTTPException(status_code=400, detail="Keyword is required to search private group in chats")
             keyword_lower = keyword.lower()
-            matches = [d for d in dialogs if d.is_group and keyword_lower in d.name.lower()]
+            matches = [d for d in dialogs if (d.is_group or d.is_channel) and keyword_lower in d.name.lower()]
             if not matches:
                 raise HTTPException(status_code=404, detail="No matching joined group found")
             group_entity = matches[0].entity
@@ -666,8 +683,13 @@ async def scrape_group(req: ScrapeRequest):
         total_seen = 0
         filtered_out = 0
 
+        log_msg(f"🕵️‍♂️ [Scraper] Starting scrape on {url} using {session_name}...")
+
         async for user in client.iter_participants(group_entity):
             total_seen += 1
+            
+            if total_seen % 50 == 0:
+                log_msg(f"🔄 [Scraper] Scanning... Processed {total_seen} members (Saved: {len(members)}, Filtered: {filtered_out})")
 
             # ── Apply filters ───────────────────────────────────────────────
             if user.is_self or user.deleted:
@@ -702,6 +724,10 @@ async def scrape_group(req: ScrapeRequest):
                     filtered_out += 1
                     continue
 
+            # Log the extracted user every 10 valid members to show some activity without spamming
+            if len(members) % 10 == 0 and len(members) > 0:
+                log_msg(f"✅ [Scraper] Extracted valid member: @{user.username or user.id}")
+
             members.append({
                 'id': user.id,
                 'username': f"@{user.username}" if user.username else '',
@@ -710,6 +736,8 @@ async def scrape_group(req: ScrapeRequest):
                 'phone': f"+{user.phone}" if user.phone else '',
                 'is_bot': 'Yes' if user.bot else 'No'
             })
+
+        log_msg(f"🎯 [Scraper] Finished! Total Processed: {total_seen} | Successfully Extracted: {len(members)}")
 
         # Cache results for export
         cache_id = f"members_{identifier}"
@@ -744,7 +772,30 @@ async def export_scraped_csv(cache_id: str):
     return StreamingResponse(
         iter([output.getvalue()]), 
         media_type="text/csv", 
-        headers={"Content-Disposition": f"attachment; filename={cache_id}.csv"}
+        headers={"Content-Disposition": f"attachment; filename=scraped_{cache_id}.csv"}
+    )
+
+@app.get("/api/scraper/export-txt/{cache_id}")
+async def export_scraped_txt(cache_id: str):
+    if cache_id not in SCRAPED_MEMBERS_CACHE:
+        raise HTTPException(status_code=404, detail="Cache not found or expired")
+    
+    members = SCRAPED_MEMBERS_CACHE[cache_id]
+    
+    lines = []
+    for m in members:
+        if m.get("username"):
+            lines.append(m['username'])
+        elif m.get("phone"):
+            lines.append(f"+{m['phone']}")
+        else:
+            lines.append(str(m["id"]))
+            
+    output = "\n".join(lines)
+    return StreamingResponse(
+        iter([output]), 
+        media_type="text/plain", 
+        headers={"Content-Disposition": f"attachment; filename=scraped_{cache_id}.txt"}
     )
 
 @app.post("/api/scraper/groups")
@@ -1270,7 +1321,7 @@ async def group_to_group_invite_worker(accounts: List[str], primary_account: str
         
         if is_private:
             for d in dialogs:
-                if d.is_group and (source_id.lower() in d.name.lower() or source_id == str(d.id)):
+                if (d.is_group or d.is_channel) and (source_id.lower() in d.name.lower() or source_id == str(d.id)):
                     source_entity = d.entity
                     break
         else:

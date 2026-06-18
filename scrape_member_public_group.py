@@ -109,7 +109,7 @@ async def main():
             
             matches = []
             for d in dialogs:
-                if d.is_group and keyword in d.name.lower():
+                if (d.is_group or d.is_channel) and keyword in d.name.lower():
                     matches.append(d)
                     
             if not matches:
@@ -135,7 +135,7 @@ async def main():
                 print("🔍 Could not resolve public identifier directly. Searching your joined chats...")
                 dialogs = await client.get_dialogs()
                 for d in dialogs:
-                    if d.is_group and (identifier.lower() in d.name.lower() or (getattr(d.entity, 'username', '') and identifier.lower() == d.entity.username.lower())):
+                    if (d.is_group or d.is_channel) and (identifier.lower() in d.name.lower() or (getattr(d.entity, 'username', '') and identifier.lower() == d.entity.username.lower())):
                         group_entity = d.entity
                         print(f"👉 Found match in your chats: {d.name}")
                         break

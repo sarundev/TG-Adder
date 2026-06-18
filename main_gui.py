@@ -250,7 +250,35 @@ class ModernApp(ctk.CTk):
         btn_verify = self.create_action_btn("Verify & Connect Account", self.verify_code, color=ACCENT_SUCCESS, hover="#059669")
         btn_verify.pack(pady=20, padx=40, fill="x")
         
+        # Separator for TData
+        ctk.CTkFrame(self.main_frame, height=1, fg_color=CARD_BORDER).pack(fill="x", padx=40, pady=(10, 20))
+        
+        btn_tdata = self.create_action_btn("Import from TData (.zip)", self.upload_tdata, color="#8B5CF6", hover="#7C3AED")
+        btn_tdata.pack(pady=10, padx=40, fill="x")
+        
         self.login_status = self.create_status_label()
+
+    def upload_tdata(self):
+        file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")], title="Select TData ZIP")
+        if not file_path: return
+        
+        self.set_status(self.login_status, "Uploading and converting TData...")
+        self.update()
+        
+        def task():
+            try:
+                with open(file_path, "rb") as f:
+                    res = requests.post(f"{API_BASE}/accounts/upload-tdata-zip", files={"file": f})
+                if res.status_code == 200:
+                    data = res.json()
+                    self.after(0, lambda: self.set_status(self.login_status, f"Success! Added account +{data.get('phone')}", is_success=True))
+                else:
+                    self.after(0, lambda: self.set_status(self.login_status, f"Failed: {res.text}", is_error=True))
+            except Exception as e:
+                self.after(0, lambda: self.set_status(self.login_status, f"Error: {e}", is_error=True))
+                
+        import threading
+        threading.Thread(target=task, daemon=True).start()
 
     def request_code(self):
         phone = self.phone_entry.get().strip()
@@ -277,10 +305,14 @@ class ModernApp(ctk.CTk):
             payload = {"phone": self.login_phone, "code": code, "phone_code_hash": self.login_hash, "password": pwd if pwd else None}
             res = requests.post(f"{API_BASE}/accounts/login/confirm", json=payload)
             if res.status_code == 200:
-                self.set_status(self.login_status, "Account successfully connected! Check Dashboard.", is_success=True)
-                self.phone_entry.delete(0, 'end')
-                self.code_entry.delete(0, 'end')
-                self.pwd_entry.delete(0, 'end')
+                data = res.json()
+                if data.get("status") == "password_required":
+                    self.set_status(self.login_status, "2FA Password required! Enter it below and click Verify again.", is_error=True)
+                else:
+                    self.set_status(self.login_status, "Account successfully connected! Check Dashboard.", is_success=True)
+                    self.phone_entry.delete(0, 'end')
+                    self.code_entry.delete(0, 'end')
+                    self.pwd_entry.delete(0, 'end')
             else:
                 self.set_status(self.login_status, f"Invalid Code/Password: {res.text}", is_error=True)
         except Exception as e:
@@ -291,8 +323,29 @@ class ModernApp(ctk.CTk):
     def show_inviter(self):
         self.create_title("Mass Inviter", "Inject a list of usernames into your target group.")
         
-        self.invite_group_entry = self.create_input("Target Group (@groupname)")
+        ctk.CTkLabel(self.main_frame, text="Select Accounts to Use:", font=ctk.CTkFont(family=FONT_MAIN, size=14, weight="bold")).pack(pady=(10, 0), padx=40, anchor="w")
+        self.inviter_account_vars = {}
+        accounts_frame = ctk.CTkScrollableFrame(self.main_frame, height=80, fg_color=CARD_BG, border_width=1, border_color=CARD_BORDER)
+        accounts_frame.pack(pady=5, padx=40, fill="x")
+        
+        if not self.accounts:
+            ctk.CTkLabel(accounts_frame, text="No accounts connected.", text_color=TEXT_MUTED).pack(pady=10)
+        else:
+            for acc in self.accounts:
+                var = ctk.StringVar(value=acc)
+                chk = ctk.CTkCheckBox(accounts_frame, text=acc, variable=var, onvalue=acc, offvalue="", font=ctk.CTkFont(family=FONT_MAIN, size=13))
+                chk.pack(pady=5, padx=10, anchor="w")
+                self.inviter_account_vars[acc] = var
+
+        self.invite_group_entry = self.create_input("Target Group or Channel (@username)")
         self.invite_group_entry.pack(pady=10, fill="x", padx=40)
+
+        self.chk_inviter_channel = ctk.CTkCheckBox(
+            self.main_frame, text="Target is a Broadcast Channel (Limits apply)", 
+            font=ctk.CTkFont(family=FONT_MAIN, size=14),
+            fg_color=ACCENT_PRIMARY, border_color=CARD_BORDER
+        )
+        self.chk_inviter_channel.pack(pady=(0, 10), padx=40, anchor="w")
 
         self.usernames_textbox = ctk.CTkTextbox(
             self.main_frame, font=ctk.CTkFont(family=FONT_MAIN, size=14),
@@ -323,9 +376,14 @@ class ModernApp(ctk.CTk):
         usernames = self.usernames_textbox.get("1.0", "end-1c").split()
         delay = float(self.delay_entry.get() or 15)
         
+        accounts_to_use = [var.get() for var in self.inviter_account_vars.values() if var.get() != ""]
+        if not accounts_to_use:
+            messagebox.showerror("Error", "No accounts selected.")
+            return
+        
         try:
             res = requests.post(f"{API_BASE}/inviter/invite-by-username", json={
-                "accounts": self.accounts, "target_group": group, "usernames": usernames, "delay": delay
+                "accounts": accounts_to_use, "target_group": group, "usernames": usernames, "delay": delay
             })
             if res.status_code == 200:
                 self.set_status(self.inviter_status, "Inviter task started successfully in background.", is_success=True)
@@ -383,15 +441,42 @@ class ModernApp(ctk.CTk):
             fg_color=ACCENT_PRIMARY, border_color=CARD_BORDER
         )
         self.chk_usernames.select()
-        self.chk_usernames.pack(pady=15, padx=40, anchor="w")
+        self.chk_usernames.pack(pady=(15, 5), padx=40, anchor="w")
+
+        self.chk_no_bots = ctk.CTkCheckBox(
+            self.main_frame, text="Filter out Bots", 
+            font=ctk.CTkFont(family=FONT_MAIN, size=14),
+            fg_color=ACCENT_PRIMARY, border_color=CARD_BORDER
+        )
+        self.chk_no_bots.select()
+        self.chk_no_bots.pack(pady=5, padx=40, anchor="w")
+
+        self.chk_active_recently = ctk.CTkCheckBox(
+            self.main_frame, text="Only Active Recently", 
+            font=ctk.CTkFont(family=FONT_MAIN, size=14),
+            fg_color=ACCENT_PRIMARY, border_color=CARD_BORDER
+        )
+        self.chk_active_recently.pack(pady=5, padx=40, anchor="w")
+
+        self.chk_has_phone = ctk.CTkCheckBox(
+            self.main_frame, text="Must have Phone Number", 
+            font=ctk.CTkFont(family=FONT_MAIN, size=14),
+            fg_color=ACCENT_PRIMARY, border_color=CARD_BORDER
+        )
+        self.chk_has_phone.pack(pady=(5, 15), padx=40, anchor="w")
 
         btn_scrape = self.create_action_btn("Start Scraping", self.start_scrape)
         btn_scrape.pack(pady=10, padx=40, fill="x")
         
         self.scrape_status = self.create_status_label()
         
+        self.export_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        
         self.btn_export = self.create_action_btn("Download CSV", self.export_scrape, color=ACCENT_SUCCESS, hover="#059669")
-        # Hidden initially
+        self.btn_export.pack(side="left", padx=(0, 5), expand=True, fill="x")
+        
+        self.btn_export_txt = self.create_action_btn("Download TXT", self.export_scrape_txt, color="#3B82F6", hover="#2563EB")
+        self.btn_export_txt.pack(side="right", padx=(5, 0), expand=True, fill="x")
         
     def start_scrape(self):
         if not self.accounts:
@@ -402,7 +487,7 @@ class ModernApp(ctk.CTk):
         if not group: return
         
         self.set_status(self.scrape_status, "Scraping in progress... Please wait.")
-        self.btn_export.pack_forget()
+        self.export_frame.pack_forget()
         
         def scrape_task():
             try:
@@ -410,9 +495,9 @@ class ModernApp(ctk.CTk):
                     "account": self.accounts[0],
                     "group_url": group,
                     "filter_has_username": bool(self.chk_usernames.get()),
-                    "filter_no_bots": True,
-                    "filter_has_phone": False,
-                    "filter_active_recently": False,
+                    "filter_no_bots": bool(self.chk_no_bots.get()),
+                    "filter_has_phone": bool(self.chk_has_phone.get()),
+                    "filter_active_recently": bool(self.chk_active_recently.get()),
                     "filter_inactive": False,
                     "filter_has_name": False
                 })
@@ -420,12 +505,12 @@ class ModernApp(ctk.CTk):
                     data = res.json()
                     self.scrape_cache_id = data.get("cache_id")
                     count = data.get("count", 0)
-                    self.set_status(self.scrape_status, f"Success! Extracted {count} members.", is_success=True)
-                    self.btn_export.pack(pady=15, padx=40, fill="x")
+                    self.after(0, lambda: self.set_status(self.scrape_status, f"Success! Extracted {count} members.", is_success=True))
+                    self.after(0, lambda: self.export_frame.pack(pady=15, padx=40, fill="x"))
                 else:
-                    self.set_status(self.scrape_status, f"Error: {res.text}", is_error=True)
+                    self.after(0, lambda: self.set_status(self.scrape_status, f"Error: {res.text}", is_error=True))
             except Exception as e:
-                self.set_status(self.scrape_status, f"Error: {e}", is_error=True)
+                self.after(0, lambda: self.set_status(self.scrape_status, f"Error: {e}", is_error=True))
                 
         threading.Thread(target=scrape_task, daemon=True).start()
 
@@ -442,16 +527,50 @@ class ModernApp(ctk.CTk):
         except Exception as e:
             self.set_status(self.scrape_status, f"Export Error: {e}", is_error=True)
 
+    def export_scrape_txt(self):
+        if not self.scrape_cache_id: return
+        try:
+            res = requests.get(f"{API_BASE}/scraper/export-txt/{self.scrape_cache_id}")
+            if res.status_code == 200:
+                save_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")], title="Save Scraped Usernames")
+                if save_path:
+                    with open(save_path, "wb") as f:
+                        f.write(res.content)
+                    self.set_status(self.scrape_status, f"Export saved to {save_path}", is_success=True)
+        except Exception as e:
+            self.set_status(self.scrape_status, f"Export Error: {e}", is_error=True)
+
     # ---------- GROUP TO GROUP ---------- #
 
     def show_group_inviter(self):
         self.create_title("Group-to-Group Injector", "Scrape members from one group and instantly inject them into another.")
         
+        ctk.CTkLabel(self.main_frame, text="Select Accounts to Use:", font=ctk.CTkFont(family=FONT_MAIN, size=14, weight="bold")).pack(pady=(10, 0), padx=40, anchor="w")
+        self.g2g_account_vars = {}
+        accounts_frame = ctk.CTkScrollableFrame(self.main_frame, height=80, fg_color=CARD_BG, border_width=1, border_color=CARD_BORDER)
+        accounts_frame.pack(pady=5, padx=40, fill="x")
+        
+        if not self.accounts:
+            ctk.CTkLabel(accounts_frame, text="No accounts connected.", text_color=TEXT_MUTED).pack(pady=10)
+        else:
+            for acc in self.accounts:
+                var = ctk.StringVar(value=acc)
+                chk = ctk.CTkCheckBox(accounts_frame, text=acc, variable=var, onvalue=acc, offvalue="", font=ctk.CTkFont(family=FONT_MAIN, size=13))
+                chk.pack(pady=5, padx=10, anchor="w")
+                self.g2g_account_vars[acc] = var
+        
         self.source_group_entry = self.create_input("Source Group (Scrape From)")
         self.source_group_entry.pack(pady=10, fill="x", padx=40)
         
-        self.target_group_entry = self.create_input("Target Group (Inject To)")
+        self.target_group_entry = self.create_input("Target Group or Channel (Inject To)")
         self.target_group_entry.pack(pady=10, fill="x", padx=40)
+
+        self.chk_g2g_channel = ctk.CTkCheckBox(
+            self.main_frame, text="Target is a Broadcast Channel (Limits apply)", 
+            font=ctk.CTkFont(family=FONT_MAIN, size=14),
+            fg_color=ACCENT_PRIMARY, border_color=CARD_BORDER
+        )
+        self.chk_g2g_channel.pack(pady=(0, 10), padx=40, anchor="w")
         
         self.delay_entry = self.create_input("Delay Between Invites (Seconds)")
         self.delay_entry.insert(0, "15.0")
@@ -476,10 +595,15 @@ class ModernApp(ctk.CTk):
         
         if not source or not target: return
         
+        accounts_to_use = [var.get() for var in self.g2g_account_vars.values() if var.get() != ""]
+        if not accounts_to_use:
+            messagebox.showerror("Error", "No accounts selected.")
+            return
+        
         try:
             res = requests.post(f"{API_BASE}/inviter/invite-group", json={
-                "accounts": self.accounts,
-                "primary_account": self.accounts[0],
+                "accounts": accounts_to_use,
+                "primary_account": accounts_to_use[0],
                 "source_group": source,
                 "target_group": target,
                 "delay": delay

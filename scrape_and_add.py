@@ -339,7 +339,7 @@ async def main():
             target_group_entity = None
             dialogs = await client.get_dialogs()
             for d in dialogs:
-                if d.is_group and d.id == target_group_id:
+                if (d.is_group or d.is_channel) and d.id == target_group_id:
                     target_group_entity = d.entity
                     break
             

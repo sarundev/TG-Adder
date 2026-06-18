@@ -97,6 +97,7 @@ SCRIPTS = {
     "Login to Telegram Account": "telegram_login.py",
     "Check Account Health": "check_account_health.py",
     "Clean & Organize Accounts": "clean_accounts.py",
+    "Remove All Accounts": "remove_all_accounts.py",
     "Export Contacts": "get_contact.py",
     
     "Scrape Public Group Members": "scrape_member_public_group.py",
@@ -179,6 +180,7 @@ def main_menu():
             "Login to Telegram Account",
             "Check Account Health",
             "Clean & Organize Accounts",
+            "Remove All Accounts",
             "Export Contacts",
             
             questionary.Separator("\n=== [ DATA_EXTRACTION ] ==="),
