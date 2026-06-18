@@ -1,4 +1,0 @@
-providers = ["python", "node"]
-
-[phases.build]
-cmds = ["bash build.sh"]
