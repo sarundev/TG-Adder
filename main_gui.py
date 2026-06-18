@@ -41,7 +41,7 @@ class ModernApp(ctk.CTk):
         # ---------------- SIDEBAR ---------------- #
         self.sidebar_frame = ctk.CTkFrame(self, width=260, corner_radius=0, fg_color=BG_SIDEBAR)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(9, weight=1)
+        self.sidebar_frame.grid_rowconfigure(12, weight=1)
 
         # Logo / Title
         self.logo_label = ctk.CTkLabel(
@@ -89,7 +89,7 @@ class ModernApp(ctk.CTk):
             font=ctk.CTkFont(family=FONT_MAIN, size=12, weight="bold"),
             text_color=ACCENT_SUCCESS
         )
-        self.status_indicator.grid(row=11, column=0, pady=30)
+        self.status_indicator.grid(row=13, column=0, pady=30)
 
         # ---------------- MAIN CONTENT ---------------- #
         self.main_frame = ctk.CTkFrame(self, corner_radius=12, fg_color=BG_MAIN)
