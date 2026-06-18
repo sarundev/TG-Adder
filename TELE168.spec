@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 
+is_win = sys.platform == 'win32'
 
 a = Analysis(
     ['main_gui.py'],
@@ -16,29 +18,59 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas,
-    [],
-    name='TELE168',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-app = BUNDLE(
-    exe,
-    name='TELE168.app',
-    icon=None,
-    bundle_identifier=None,
-)
+if is_win:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name='TELE168',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='TELE168',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name='TELE168',
+    )
+
+    app = BUNDLE(
+        coll,
+        name='TELE168.app',
+        icon=None,
+        bundle_identifier=None,
+    )
