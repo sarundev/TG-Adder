@@ -1,0 +1,15 @@
+[providers]
+  python = {}
+  node = {}
+
+[phases.setup]
+  nixPkgs = ["nodejs", "python311", "gcc"]
+
+[phases.build]
+  cmds = [
+    "cd frontend && npm install && npm run build && cd ..",
+    "pip install -r requirements.txt"
+  ]
+
+[start]
+  cmd = "python server.py"
