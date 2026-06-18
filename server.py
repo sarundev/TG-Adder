@@ -84,6 +84,49 @@ if os.path.exists(frontend_path):
     
 app.mount("/downloads", StaticFiles(directory=downloads_path), name="downloads")
 
+class BotStartRequest(BaseModel):
+    accounts: List[str]
+    bot_username: str
+    delay_min: int = 1
+    delay_max: int = 3
+
+async def _bot_start_task(req: BotStartRequest):
+    global LOG_BUFFER
+    log_msg(f"🚀 Starting Auto Bot Clicker for {len(req.accounts)} accounts targeting {req.bot_username}...")
+    
+    for session_name in req.accounts:
+        try:
+            client = make_client(os.path.join(ACCOUNTS_DIR, session_name))
+            await client.connect()
+            
+            if not await client.is_user_authorized():
+                log_msg(f"❌ {session_name} is not authorized.")
+                continue
+                
+            # Send the /start command to the bot
+            log_msg(f"⚙️ {session_name} sending /start to {req.bot_username}...")
+            await client.send_message(req.bot_username, '/start')
+            log_msg(f"✅ {session_name} successfully started {req.bot_username}!")
+            
+            # Wait random delay
+            sleep_time = random.uniform(req.delay_min, req.delay_max)
+            log_msg(f"⏳ Waiting {sleep_time:.1f}s before next account...")
+            await asyncio.sleep(sleep_time)
+            
+        except Exception as e:
+            log_msg(f"❌ Error with {session_name} starting bot: {str(e)}")
+            await asyncio.sleep(1)
+
+@app.post("/api/bot/start")
+async def auto_start_bot(req: BotStartRequest, background_tasks: BackgroundTasks):
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="Select at least one account")
+    if not req.bot_username:
+        raise HTTPException(status_code=400, detail="Bot username is required")
+        
+    background_tasks.add_task(_bot_start_task, req)
+    return {"status": "success", "message": f"Started sending /start to {req.bot_username} using {len(req.accounts)} accounts"}
+
 @app.get("/")
 def serve_frontend():
     if os.path.exists(frontend_path):

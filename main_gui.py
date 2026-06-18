@@ -79,7 +79,8 @@ class ModernApp(ctk.CTk):
         self.btn_scraper = create_nav_btn(6, "📡  Data Scraper", lambda: self.select_tab("📡  Data Scraper", self.show_scraper))
         self.btn_g2g = create_nav_btn(7, "🔄  Group to Group", lambda: self.select_tab("🔄  Group to Group", self.show_group_inviter))
         self.btn_warmup = create_nav_btn(8, "🛡️  Account Warmup", lambda: self.select_tab("🛡️  Account Warmup", self.show_warmup))
-        self.btn_terminal = create_nav_btn(9, "💻  Terminal Logs", lambda: self.select_tab("💻  Terminal Logs", self.show_terminal))
+        self.btn_bot = create_nav_btn(9, "🤖  Auto Bot Starter", lambda: self.select_tab("🤖  Auto Bot Starter", self.show_bot_starter))
+        self.btn_terminal = create_nav_btn(10, "💻  Terminal Logs", lambda: self.select_tab("💻  Terminal Logs", self.show_terminal))
 
         # Status indicator at bottom
         self.status_indicator = ctk.CTkLabel(
