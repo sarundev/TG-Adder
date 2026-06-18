@@ -198,8 +198,8 @@ function App() {
           <div className="price-card popular">
             <div className="popular-badge">Most Popular</div>
             <h3>3 Months</h3>
-            <div className="price">$69</div>
-            <p>Full access for 90 days</p>
+            <div className="price">$50</div>
+            <p>Save money and commit longer</p>
             <button className="btn btn-primary" onClick={() => handleBuy('3_months')} disabled={buying}>
               {buying ? 'Processing...' : 'Buy Now'}
             </button>
