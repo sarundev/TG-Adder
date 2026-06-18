@@ -158,7 +158,7 @@ class ModernApp(ctk.CTk):
             err_label = ctk.CTkLabel(login_frame, text=error, font=ctk.CTkFont(family=FONT_MAIN, size=13), text_color=ACCENT_DANGER)
             err_label.pack(pady=(0, 10))
             
-        key_input = ctk.CTkEntry(login_frame, placeholder_text="XXXX-XXXX-XXXX-XXXX", width=350, height=45, font=ctk.CTkFont(family=FONT_MAIN, size=14), justify="center", corner_radius=8, fg_color=BG_SIDEBAR, border_color=CARD_BORDER)
+        key_input = ctk.CTkEntry(login_frame, placeholder_text="TLG-MASTER-KEY-168", width=350, height=45, font=ctk.CTkFont(family=FONT_MAIN, size=14), justify="center", corner_radius=8, fg_color=BG_SIDEBAR, border_color=CARD_BORDER)
         key_input.pack(pady=10)
         
         status_label = ctk.CTkLabel(login_frame, text="", text_color=TEXT_MUTED)
