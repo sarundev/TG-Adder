@@ -8,3 +8,6 @@ accounts/licenses.json
 .license_token
 build/
 dist/
+downloads/
+*.dmg
+*.app
