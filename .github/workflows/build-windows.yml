@@ -27,17 +27,18 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller main_gui.py --name TelegramSuiteGUI --onefile --hidden-import=rich --hidden-import=questionary --hidden-import=telethon --hidden-import=python-multipart --hidden-import=multipart --hidden-import=uvicorn.logging --hidden-import=uvicorn.loops --hidden-import=uvicorn.loops.auto --hidden-import=uvicorn.protocols --hidden-import=uvicorn.protocols.http --hidden-import=uvicorn.protocols.http.auto --hidden-import=uvicorn.protocols.websockets --hidden-import=uvicorn.protocols.websockets.auto --hidden-import=uvicorn.lifespan --hidden-import=uvicorn.lifespan.on --hidden-import=uvicorn.lifespan.off
+        pyinstaller --noconfirm TELE168.spec
 
     - name: Zip Executable
       run: |
-        Compress-Archive -Path dist/TelegramSuiteGUI.exe -DestinationPath downloads/TelegramSuite_Windows.zip -Force
+        New-Item -ItemType Directory -Force -Path downloads
+        Compress-Archive -Path dist/TELE168.exe -DestinationPath downloads/TELE168_Windows.zip -Force
 
     - name: Commit and Push
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
-        git add downloads/TelegramSuite_Windows.zip
+        git add -f downloads/TELE168_Windows.zip
         git commit -m "Auto-build Windows executable [skip ci]" || echo "No changes to commit"
         git push origin main
       env:
