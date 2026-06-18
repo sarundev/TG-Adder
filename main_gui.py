@@ -4,6 +4,8 @@ import requests
 import uvicorn
 import csv
 import os
+import uuid
+import json
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 from server import app
@@ -105,7 +107,91 @@ class ModernApp(ctk.CTk):
         self.is_terminal_active = False
 
         # Start App
+        self.hwid = str(uuid.getnode())
+        self.sidebar_frame.grid_remove() # Hide sidebar initially
+        
+        # Start a delayed check to ensure API is up before verifying
+        self.after(1500, self.check_license)
+
+    def check_license(self):
+        try:
+            if not os.path.exists("client_license.txt"):
+                self.show_license_login()
+                return
+                
+            with open("client_license.txt", "r") as f:
+                token = f.read().strip()
+                
+            if not token:
+                self.show_license_login()
+                return
+            
+            res = requests.post(f"{API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=3)
+            if res.status_code == 200:
+                self.unlock_app()
+            else:
+                self.show_license_login(error=res.json().get('detail', 'License expired or invalid'))
+        except Exception:
+            self.show_license_login()
+
+    def unlock_app(self):
+        self.sidebar_frame.grid()
         self.select_tab("📊  Dashboard", self.show_dashboard)
+
+    def show_license_login(self, error=""):
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+            
+        login_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        login_frame.place(relx=0.5, rely=0.5, anchor="center")
+        
+        icon = ctk.CTkLabel(login_frame, text="🔒", font=ctk.CTkFont(size=60))
+        icon.pack(pady=(0, 10))
+        
+        title = ctk.CTkLabel(login_frame, text="License Activation", font=ctk.CTkFont(family=FONT_TITLE, size=28, weight="bold"), text_color=TEXT_PRIMARY)
+        title.pack(pady=5)
+        
+        subtitle = ctk.CTkLabel(login_frame, text="Enter your license key to access TG TELE168", font=ctk.CTkFont(family=FONT_MAIN, size=14), text_color=TEXT_MUTED)
+        subtitle.pack(pady=(0, 30))
+        
+        if error:
+            err_label = ctk.CTkLabel(login_frame, text=error, font=ctk.CTkFont(family=FONT_MAIN, size=13), text_color=ACCENT_DANGER)
+            err_label.pack(pady=(0, 10))
+            
+        key_input = ctk.CTkEntry(login_frame, placeholder_text="XXXX-XXXX-XXXX-XXXX", width=350, height=45, font=ctk.CTkFont(family=FONT_MAIN, size=14), justify="center", corner_radius=8, fg_color=BG_SIDEBAR, border_color=CARD_BORDER)
+        key_input.pack(pady=10)
+        
+        status_label = ctk.CTkLabel(login_frame, text="", text_color=TEXT_MUTED)
+        status_label.pack()
+        
+        def attempt_login():
+            token = key_input.get().strip()
+            if not token:
+                status_label.configure(text="Please enter a license key", text_color=ACCENT_DANGER)
+                return
+            
+            status_label.configure(text="Verifying...", text_color=TEXT_MUTED)
+            self.update()
+            
+            try:
+                res = requests.post(f"{API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=5)
+                if res.status_code == 200:
+                    with open("client_license.txt", "w") as f:
+                        f.write(token)
+                    status_label.configure(text="License Verified! Unlocking...", text_color=ACCENT_SUCCESS)
+                    self.update()
+                    self.after(1000, self.unlock_app)
+                else:
+                    err = res.json().get('detail', 'Verification failed')
+                    status_label.configure(text=err, text_color=ACCENT_DANGER)
+            except Exception as e:
+                status_label.configure(text="Connection error. Is server running?", text_color=ACCENT_DANGER)
+                
+        btn_login = ctk.CTkButton(login_frame, text="Activate & Login", command=attempt_login, width=350, height=45, font=ctk.CTkFont(family=FONT_MAIN, size=15, weight="bold"), fg_color=ACCENT_PRIMARY, hover_color=ACCENT_HOVER, corner_radius=8)
+        btn_login.pack(pady=(20, 10))
+        
+        hwid_label = ctk.CTkLabel(login_frame, text=f"HWID: {self.hwid}", font=ctk.CTkFont(family=FONT_MAIN, size=11), text_color=TEXT_MUTED)
+        hwid_label.pack(pady=(30, 0))
 
     def select_tab(self, name, func):
         self.is_terminal_active = (name == "💻  Terminal Logs")
