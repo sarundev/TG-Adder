@@ -495,7 +495,7 @@ def buy_license(req: LicenseBuyRequest):
     profile_id = "pNiGKZdBf8OMDhiIiRa5TmzCZiYJ16tB"
     secret_key = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
     
-    price_map = {"1_month": 15.0, "1_year": 100.0, "lifetime": 199.0}
+    price_map = {"1_week": 5.0, "1_month": 15.0, "3_months": 40.0, "1_year": 100.0, "lifetime": 199.0}
     price = price_map.get(req.duration, 15.0)
     
     transaction_id = f"ORD_{int(time.time())}"
@@ -529,7 +529,9 @@ def issue_license(req: LicenseIssueRequest):
     new_token = f"TLG-{str(uuid.uuid4()).upper()[:8]}-{str(uuid.uuid4()).upper()[:8]}"
     
     duration_map = {
+        "1_week": 7,
         "1_month": 30,
+        "3_months": 90,
         "1_year": 365,
         "lifetime": None
     }
