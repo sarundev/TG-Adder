@@ -80,7 +80,8 @@ class ModernApp(ctk.CTk):
         self.btn_g2g = create_nav_btn(7, "🔄  Group to Group", lambda: self.select_tab("🔄  Group to Group", self.show_group_inviter))
         self.btn_warmup = create_nav_btn(8, "🛡️  Account Warmup", lambda: self.select_tab("🛡️  Account Warmup", self.show_warmup))
         self.btn_bot = create_nav_btn(9, "🤖  Auto Bot Starter", lambda: self.select_tab("🤖  Auto Bot Starter", self.show_bot_starter))
-        self.btn_terminal = create_nav_btn(10, "💻  Terminal Logs", lambda: self.select_tab("💻  Terminal Logs", self.show_terminal))
+        self.btn_media = create_nav_btn(10, "🎬  Media Downloader", lambda: self.select_tab("🎬  Media Downloader", self.show_media_downloader))
+        self.btn_terminal = create_nav_btn(11, "💻  Terminal Logs", lambda: self.select_tab("💻  Terminal Logs", self.show_terminal))
 
         # Status indicator at bottom
         self.status_indicator = ctk.CTkLabel(
@@ -639,6 +640,91 @@ class ModernApp(ctk.CTk):
                 self.set_status(self.warmup_status, f"Error: {res.text}", is_error=True)
         except Exception as e:
             self.set_status(self.warmup_status, f"Error: {e}", is_error=True)
+
+    # ---------- TERMINAL LOGS ---------- #
+
+    def show_bot_starter(self):
+        self.create_title("Auto Bot Starter", "Mass send /start to any Telegram bot from all accounts")
+        
+        bot_username = self.create_input("Bot Username (e.g., @my_awesome_bot)")
+        bot_username.pack(fill="x", padx=40, pady=20)
+        
+        delay_min = self.create_input("Minimum Delay (seconds, default: 1)")
+        delay_min.pack(fill="x", padx=40, pady=10)
+        
+        delay_max = self.create_input("Maximum Delay (seconds, default: 3)")
+        delay_max.pack(fill="x", padx=40, pady=(10, 30))
+        
+        self.bot_status = self.create_status_label()
+
+        def start_bot_clicker():
+            if not self.accounts:
+                messagebox.showwarning("Error", "No accounts logged in.")
+                return
+            target = bot_username.get().strip()
+            if not target:
+                messagebox.showwarning("Error", "Enter a target bot username.")
+                return
+                
+            try:
+                res = requests.post(f"{API_BASE}/bot/start", json={
+                    "accounts": self.accounts,
+                    "bot_username": target,
+                    "delay_min": int(delay_min.get() or 1),
+                    "delay_max": int(delay_max.get() or 3)
+                }).json()
+                self.set_status(self.bot_status, res.get("message", "Bot clicker started!"), is_success=True)
+            except Exception as e:
+                self.set_status(self.bot_status, f"Error: {str(e)}", is_error=True)
+
+        btn = self.create_action_btn("🤖 Start Sending /start Commands", start_bot_clicker)
+        btn.pack(fill="x", padx=40, pady=10)
+
+    # ---------- MEDIA DOWNLOADER ---------- #
+
+    def show_media_downloader(self):
+        self.create_title("Media Downloader", "Bulk download videos from any Public or Private Group/Channel")
+        
+        # Account selection for downloader (only need 1 account usually)
+        account_var = ctk.StringVar(value="Select Account to use")
+        account_dropdown = ctk.CTkOptionMenu(
+            self.main_frame, values=self.accounts if self.accounts else ["No accounts logged in"],
+            variable=account_var, font=ctk.CTkFont(family=FONT_MAIN, size=14),
+            fg_color=CARD_BG, button_color=CARD_BORDER, button_hover_color=ACCENT_PRIMARY,
+            height=40
+        )
+        account_dropdown.pack(fill="x", padx=40, pady=(10, 20))
+
+        target_chat = self.create_input("Target Group/Channel Link or ID (e.g., https://t.me/example)")
+        target_chat.pack(fill="x", padx=40, pady=10)
+        
+        limit_input = self.create_input("Number of messages to scan back (default: 100)")
+        limit_input.pack(fill="x", padx=40, pady=(10, 30))
+        
+        self.media_status = self.create_status_label()
+
+        def start_media_download():
+            acc = account_var.get()
+            if acc == "Select Account to use" or acc == "No accounts logged in":
+                messagebox.showwarning("Error", "Please select a valid account.")
+                return
+            target = target_chat.get().strip()
+            if not target:
+                messagebox.showwarning("Error", "Enter a target group or channel.")
+                return
+                
+            try:
+                res = requests.post(f"{API_BASE}/media/download", json={
+                    "account": acc,
+                    "target_chat": target,
+                    "limit": int(limit_input.get() or 100)
+                }).json()
+                self.set_status(self.media_status, res.get("message", "Downloader started!"), is_success=True)
+            except Exception as e:
+                self.set_status(self.media_status, f"Error: {str(e)}", is_error=True)
+
+        btn = self.create_action_btn("🎬 Start Video Downloader", start_media_download)
+        btn.pack(fill="x", padx=40, pady=10)
 
     # ---------- TERMINAL LOGS ---------- #
 

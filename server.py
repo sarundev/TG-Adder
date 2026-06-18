@@ -127,6 +127,55 @@ async def auto_start_bot(req: BotStartRequest, background_tasks: BackgroundTasks
     background_tasks.add_task(_bot_start_task, req)
     return {"status": "success", "message": f"Started sending /start to {req.bot_username} using {len(req.accounts)} accounts"}
 
+class MediaDownloadRequest(BaseModel):
+    account: str
+    target_chat: str
+    limit: int = 100
+
+async def _media_download_task(req: MediaDownloadRequest):
+    global LOG_BUFFER
+    log_msg(f"📥 Starting Video Downloader on {req.target_chat} using {req.account}...")
+    
+    try:
+        client = make_client(os.path.join(ACCOUNTS_DIR, req.account))
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            log_msg(f"❌ Account {req.account} is not authorized.")
+            return
+            
+        target_entity = await client.get_entity(req.target_chat)
+        
+        safe_name = req.target_chat.replace("/", "_").replace(":", "_").replace("https___t.me_", "")
+        download_dir = os.path.join(downloads_path, "videos", safe_name)
+        os.makedirs(download_dir, exist_ok=True)
+        
+        video_count = 0
+        log_msg(f"🔍 Scanning last {req.limit} messages in {req.target_chat} for videos...")
+        
+        async for message in client.iter_messages(target_entity, limit=req.limit):
+            if message.video or (message.document and message.file and message.file.mime_type and message.file.mime_type.startswith('video/')):
+                log_msg(f"⬇️ Found video (Msg {message.id}). Downloading...")
+                await client.download_media(message, file=download_dir)
+                video_count += 1
+                log_msg(f"✅ Saved video from message {message.id}!")
+                
+        log_msg(f"🎉 Media Downloader finished! Total videos downloaded: {video_count}")
+        log_msg(f"📁 Saved to: {download_dir}")
+        
+    except Exception as e:
+        log_msg(f"❌ Error downloading media: {str(e)}")
+
+@app.post("/api/media/download")
+async def start_media_download(req: MediaDownloadRequest, background_tasks: BackgroundTasks):
+    if not req.account:
+        raise HTTPException(status_code=400, detail="Select an account")
+    if not req.target_chat:
+        raise HTTPException(status_code=400, detail="Target chat is required")
+        
+    background_tasks.add_task(_media_download_task, req)
+    return {"status": "success", "message": f"Started scanning {req.target_chat} for videos..."}
+
 @app.get("/")
 def serve_frontend():
     if os.path.exists(frontend_path):
