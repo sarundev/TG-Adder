@@ -1,7 +1,41 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './index.css';
 
 function App() {
+  const [buying, setBuying] = useState(false);
+
+  const handleBuy = async (duration) => {
+    if (buying) return;
+    setBuying(true);
+    try {
+      const res = await fetch('/api/license/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration })
+      });
+      const data = await res.json();
+      
+      if (data.status === 'success') {
+        alert('Purchase Successful! Downloading your license key...');
+        
+        const blob = new Blob([`Your TG TELE168 License Key:\n\n${data.token}\n\nKeep this safe. Enter it in the Desktop app to unlock it.`], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'TG_TELE168_License.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        alert('Purchase failed: ' + data.detail);
+      }
+    } catch (e) {
+      alert('Error connecting to payment server.');
+    }
+    setBuying(false);
+  };
+
   return (
     <div className="app-container">
       {/* Navigation */}
@@ -118,6 +152,38 @@ function App() {
             </div>
             <h3>Live Terminal Logs</h3>
             <p>Monitor exactly what every account is doing in real-time. Built-in log viewer allows you to track errors, successes, and API limits seamlessly.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section className="pricing-section">
+        <h2 className="section-title" style={{ textAlign: 'center', marginBottom: '3rem', fontSize: '2.5rem' }}>Choose Your License</h2>
+        <div className="pricing-cards">
+          <div className="price-card">
+            <h3>1 Month</h3>
+            <div className="price">$29</div>
+            <p>Full access for 30 days</p>
+            <button className="btn btn-secondary" onClick={() => handleBuy('1_month')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
+            </button>
+          </div>
+          <div className="price-card popular">
+            <div className="popular-badge">Most Popular</div>
+            <h3>3 Months</h3>
+            <div className="price">$69</div>
+            <p>Full access for 90 days</p>
+            <button className="btn btn-primary" onClick={() => handleBuy('3_months')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
+            </button>
+          </div>
+          <div className="price-card">
+            <h3>Lifetime</h3>
+            <div className="price">$199</div>
+            <p>One-time payment, forever</p>
+            <button className="btn btn-secondary" onClick={() => handleBuy('lifetime')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
+            </button>
           </div>
         </div>
       </section>

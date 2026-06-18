@@ -467,6 +467,31 @@ def generate_license(req: LicenseGenerateRequest):
     
     return {"status": "success", "token": new_token, "duration": req.duration}
 
+class LicenseBuyRequest(BaseModel):
+    duration: str
+
+@app.post("/api/license/buy")
+def buy_license(req: LicenseBuyRequest):
+    import uuid
+    new_token = f"TLG-{str(uuid.uuid4()).upper()[:8]}-{str(uuid.uuid4()).upper()[:8]}"
+    
+    duration_map = {
+        "1_month": 30,
+        "3_months": 90,
+        "lifetime": None
+    }
+    duration_days = duration_map.get(req.duration, 30)
+    
+    licenses = load_licenses()
+    licenses[new_token] = {
+        "hwid": None, 
+        "duration_days": duration_days,
+        "expires_at": None 
+    }
+    save_licenses(licenses)
+    
+    return {"status": "success", "token": new_token, "message": "Purchase successful! Your license key has been generated."}
+
 @app.get("/api/license/list")
 def list_licenses(admin_key: str):
     if admin_key != "admin123":

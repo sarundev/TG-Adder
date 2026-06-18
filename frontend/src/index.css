@@ -205,6 +205,81 @@ h1.title {
   border-top: 1px solid var(--border-light);
 }
 
+/* Pricing Section */
+.pricing-section {
+  padding: 5rem 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.pricing-cards {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.price-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  padding: 2.5rem 2rem;
+  width: 320px;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.price-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-lg);
+}
+
+.price-card.popular {
+  border-color: var(--secondary);
+  border-width: 2px;
+}
+
+.popular-badge {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: var(--secondary);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.price-card h3 {
+  font-size: 1.5rem;
+  color: var(--text-main);
+  margin-bottom: 1rem;
+}
+
+.price {
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 1rem;
+}
+
+.price-card p {
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+  flex: 1;
+}
+
+.price-card .btn {
+  width: 100%;
+  justify-content: center;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   h1.title {
