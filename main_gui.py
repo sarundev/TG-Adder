@@ -731,8 +731,14 @@ class ModernApp(ctk.CTk):
     def show_terminal(self):
         self.create_title("Terminal Logs", "Real-time process logs from the automation server.")
         
+        btn_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        btn_frame.pack(pady=5, padx=40, fill="x")
+        
         btn_clear = self.create_action_btn("Clear Logs", self.clear_logs, color=ACCENT_DANGER, hover=DANGER_HOVER, width=120)
-        btn_clear.pack(pady=5, padx=40, anchor="w")
+        btn_clear.pack(in_=btn_frame, side="left", padx=(0, 10))
+        
+        btn_save = self.create_action_btn("💾 Save Logs", self.save_logs, color=ACCENT_SUCCESS, hover="#059669", width=120)
+        btn_save.pack(in_=btn_frame, side="left")
         
         self.log_textbox = ctk.CTkTextbox(
             self.main_frame, font=ctk.CTkFont(family="Courier", size=13),
@@ -772,6 +778,25 @@ class ModernApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
+    def save_logs(self):
+        text = self.log_textbox.get("1.0", "end-1c")
+        if not text.strip():
+            messagebox.showinfo("Empty", "No logs to save.")
+            return
+            
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt", 
+            initialfile="terminal_logs.txt", 
+            title="Save Terminal Logs",
+            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
+        )
+        if file_path:
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                messagebox.showinfo("Success", f"Logs saved to:\n{file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save file:\n{str(e)}")
 
 def run_server():
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")

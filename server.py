@@ -153,12 +153,26 @@ async def _media_download_task(req: MediaDownloadRequest):
         video_count = 0
         log_msg(f"🔍 Scanning last {req.limit} messages in {req.target_chat} for videos...")
         
+        messages_to_download = []
         async for message in client.iter_messages(target_entity, limit=req.limit):
             if message.video or (message.document and message.file and message.file.mime_type and message.file.mime_type.startswith('video/')):
-                log_msg(f"⬇️ Found video (Msg {message.id}). Downloading...")
-                await client.download_media(message, file=download_dir)
-                video_count += 1
-                log_msg(f"✅ Saved video from message {message.id}!")
+                messages_to_download.append(message)
+                
+        log_msg(f"📊 Found {len(messages_to_download)} videos. Starting optimized concurrent download...")
+        
+        # Download in batches of 5 to optimize speed without rate-limiting
+        batch_size = 5
+        for i in range(0, len(messages_to_download), batch_size):
+            batch = messages_to_download[i:i+batch_size]
+            log_msg(f"⚡ Downloading batch {i//batch_size + 1}/{(len(messages_to_download)+batch_size-1)//batch_size}...")
+            
+            tasks = []
+            for msg in batch:
+                tasks.append(client.download_media(msg, file=download_dir))
+                
+            await asyncio.gather(*tasks)
+            video_count += len(batch)
+            log_msg(f"✅ Batch completed. ({video_count}/{len(messages_to_download)})")
                 
         log_msg(f"🎉 Media Downloader finished! Total videos downloaded: {video_count}")
         log_msg(f"📁 Saved to: {download_dir}")
