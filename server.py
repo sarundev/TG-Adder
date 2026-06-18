@@ -481,8 +481,8 @@ def buy_license(req: LicenseBuyRequest):
     profile_id = "pNiGKZdBf8OMDhiIiRa5TmzCZiYJ16tB"
     secret_key = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
     
-    price_map = {"1_month": 1.0, "3_months": 69.0, "lifetime": 199.0}
-    price = price_map.get(req.duration, 1.0)
+    price_map = {"1_month": 15.0, "3_months": 69.0, "lifetime": 199.0}
+    price = price_map.get(req.duration, 15.0)
     
     transaction_id = f"ORD_{int(time.time())}"
     success_url = req.success_url
