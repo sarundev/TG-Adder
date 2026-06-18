@@ -495,7 +495,7 @@ def buy_license(req: LicenseBuyRequest):
     profile_id = "pNiGKZdBf8OMDhiIiRa5TmzCZiYJ16tB"
     secret_key = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
     
-    price_map = {"1_month": 15.0, "3_months": 50.0, "lifetime": 199.0}
+    price_map = {"1_month": 15.0, "1_year": 100.0, "lifetime": 199.0}
     price = price_map.get(req.duration, 15.0)
     
     transaction_id = f"ORD_{int(time.time())}"
@@ -530,7 +530,7 @@ def issue_license(req: LicenseIssueRequest):
     
     duration_map = {
         "1_month": 30,
-        "3_months": 90,
+        "1_year": 365,
         "lifetime": None
     }
     duration_days = duration_map.get(req.duration, 30)

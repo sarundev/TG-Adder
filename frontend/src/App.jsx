@@ -189,10 +189,10 @@ function App() {
           </div>
           <div className="price-card popular">
             <div className="popular-badge">Most Popular</div>
-            <h3>3 Months</h3>
-            <div className="price">$50</div>
+            <h3>1 Year</h3>
+            <div className="price">$100</div>
             <p>Save money and commit longer</p>
-            <button className="btn btn-primary" onClick={() => handleBuy('3_months')} disabled={buying}>
+            <button className="btn btn-primary" onClick={() => handleBuy('1_year')} disabled={buying}>
               {buying ? 'Processing...' : 'Buy Now'}
             </button>
           </div>

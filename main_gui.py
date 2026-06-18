@@ -116,11 +116,11 @@ class ModernApp(ctk.CTk):
 
     def check_license(self):
         try:
-            if not os.path.exists("client_license.txt"):
+            if not os.path.exists(os.path.expanduser("~/.tele168_license.txt")):
                 self.show_license_login()
                 return
                 
-            with open("client_license.txt", "r") as f:
+            with open(os.path.expanduser("~/.tele168_license.txt"), "r") as f:
                 token = f.read().strip()
                 
             if not token:
@@ -177,7 +177,7 @@ class ModernApp(ctk.CTk):
             try:
                 res = requests.post(f"{LICENSE_API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=5)
                 if res.status_code == 200:
-                    with open("client_license.txt", "w") as f:
+                    with open(os.path.expanduser("~/.tele168_license.txt"), "w") as f:
                         f.write(token)
                     status_label.configure(text="License Verified! Unlocking...", text_color=ACCENT_SUCCESS)
                     self.update()
