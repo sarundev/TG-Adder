@@ -480,8 +480,8 @@ def buy_license(req: LicenseBuyRequest):
     secret_id = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
     
     khqr = KHQR()
-    price_map = {"1_month": 29.0, "3_months": 69.0, "lifetime": 199.0}
-    price = price_map.get(req.duration, 29.0)
+    price_map = {"1_month": 1.0, "3_months": 69.0, "lifetime": 199.0}
+    price = price_map.get(req.duration, 1.0)
     
     try:
         # We try to use the Profile ID as the Bakong Account ID/Merchant ID
