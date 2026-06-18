@@ -484,8 +484,9 @@ def buy_license(req: LicenseBuyRequest):
     price = price_map.get(req.duration, 29.0)
     
     try:
+        # We try to use the Profile ID as the Bakong Account ID/Merchant ID
         khqr_string = khqr.create_qr(
-            account_id="tele168@acleda",
+            account_id=profile_id,
             merchant_name="TG TELE168 App",
             merchant_city="Phnom Penh",
             amount=price,
