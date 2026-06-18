@@ -180,10 +180,26 @@ function App() {
         <h2 className="section-title" style={{ textAlign: 'center', marginBottom: '3rem', fontSize: '2.5rem' }}>Choose Your License</h2>
         <div className="pricing-cards">
           <div className="price-card">
+            <h3>1 Week</h3>
+            <div className="price">$5</div>
+            <p>Full access for 7 days</p>
+            <button className="btn btn-secondary" onClick={() => handleBuy('1_week')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
+            </button>
+          </div>
+          <div className="price-card">
             <h3>1 Month</h3>
             <div className="price">$15</div>
             <p>Full access for 30 days</p>
             <button className="btn btn-secondary" onClick={() => handleBuy('1_month')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
+            </button>
+          </div>
+          <div className="price-card">
+            <h3>3 Months</h3>
+            <div className="price">$40</div>
+            <p>Full access for 90 days</p>
+            <button className="btn btn-secondary" onClick={() => handleBuy('3_months')} disabled={buying}>
               {buying ? 'Processing...' : 'Buy Now'}
             </button>
           </div>
