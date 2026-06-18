@@ -520,6 +520,45 @@ def buy_license(req: LicenseBuyRequest):
         "checkout_url": checkout_url
     }
 
+class AccountBuyRequest(BaseModel):
+    account_type: str
+    success_url: str
+
+@app.post("/api/account/buy")
+def buy_account(req: AccountBuyRequest):
+    import time
+    import hashlib
+    import urllib.parse
+    
+    # User Profile ID and SecretID for khqr.cc
+    profile_id = "pNiGKZdBf8OMDhiIiRa5TmzCZiYJ16tB"
+    secret_key = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
+    
+    price_map = {"fresh": 0.50, "aged": 2.00, "admin": 5.00}
+    price = price_map.get(req.account_type, 0.50)
+    
+    transaction_id = f"ACC_{int(time.time())}"
+    success_url = req.success_url
+    remark = f"Account_{req.account_type}"
+    
+    raw_string = f"{secret_key}{transaction_id}{price}{success_url}{remark}"
+    hash_val = hashlib.sha1(raw_string.encode('utf-8')).hexdigest()
+    
+    params = {
+        "transaction_id": transaction_id,
+        "amount": price,
+        "success_url": success_url,
+        "remark": remark,
+        "hash": hash_val
+    }
+    
+    checkout_url = f"https://khqr.cc/api/payment/request/{profile_id}?{urllib.parse.urlencode(params)}"
+    
+    return {
+        "status": "redirect", 
+        "checkout_url": checkout_url
+    }
+
 class LicenseIssueRequest(BaseModel):
     duration: str
 

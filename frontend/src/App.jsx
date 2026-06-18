@@ -4,11 +4,37 @@ import './index.css';
 function App() {
   const [buying, setBuying] = useState(false);
 
+  const handleBuyAccount = async (accountType) => {
+    if (buying) return;
+    setBuying(true);
+    try {
+      const success_url = window.location.origin + window.location.pathname + "?account_success=true&type=" + accountType;
+      const res = await fetch('/api/account/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_type: accountType, success_url })
+      });
+      const data = await res.json();
+      
+      if (data.status === 'redirect') {
+        window.location.href = data.checkout_url;
+      } else {
+        alert('Purchase failed: ' + (data.detail || data.message));
+      }
+    } catch (e) {
+      alert('Error connecting to payment server.');
+    }
+    setBuying(false);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('success') === 'true') {
       const duration = params.get('duration') || '1_month';
       issueLicenseAfterPayment(duration);
+    } else if (params.get('account_success') === 'true') {
+      const accountType = params.get('type') || 'fresh';
+      issueAccountAfterPayment(accountType);
     }
   }, []);
 
@@ -61,6 +87,27 @@ function App() {
       alert('Error connecting to payment server.');
     }
     setBuying(false);
+  };
+
+  const issueAccountAfterPayment = async (accountType) => {
+    const typeNames = { 'fresh': 'Fresh Account', 'aged': 'Aged Account', 'admin': 'Admin Account' };
+    const name = typeNames[accountType] || 'Telegram Account';
+    const orderId = 'ORD_' + Math.floor(Date.now() / 1000);
+    
+    const receiptText = `Thank you for your purchase!\n\nOrder ID: ${orderId}\nItem: 1x ${name}\n\nSince TData ZIP files are large, please send this receipt to our Telegram Support (@YourTelegramUsername) to instantly receive your Account ZIP file.`;
+    
+    const blob = new Blob([receiptText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Receipt_${orderId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    window.history.replaceState({}, document.title, window.location.pathname);
+    alert('Payment Complete! Your receipt has been downloaded. Send it to support to get your account.');
   };
 
   return (
@@ -184,8 +231,8 @@ function App() {
             <h3>Fresh Account</h3>
             <div className="price">$0.50</div>
             <p>Freshly registered on premium numbers. Best for mass inviting.</p>
-            <button className="btn btn-secondary" onClick={() => alert('Account store purchasing system is currently being set up. Please contact support to buy accounts manually.')}>
-              Buy Now
+            <button className="btn btn-secondary" onClick={() => handleBuyAccount('fresh')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
             </button>
           </div>
           <div className="price-card popular">
@@ -193,16 +240,16 @@ function App() {
             <h3>Aged Account</h3>
             <div className="price">$2.00</div>
             <p>Aged 3+ months. High trust score, much lower ban rate.</p>
-            <button className="btn btn-primary" onClick={() => alert('Account store purchasing system is currently being set up. Please contact support to buy accounts manually.')}>
-              Buy Now
+            <button className="btn btn-primary" onClick={() => handleBuyAccount('aged')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
             </button>
           </div>
           <div className="price-card">
             <h3>Admin Account</h3>
             <div className="price">$5.00</div>
             <p>Premium 1-year aged accounts. Perfect for group administration.</p>
-            <button className="btn btn-secondary" onClick={() => alert('Account store purchasing system is currently being set up. Please contact support to buy accounts manually.')}>
-              Buy Now
+            <button className="btn btn-secondary" onClick={() => handleBuyAccount('admin')} disabled={buying}>
+              {buying ? 'Processing...' : 'Buy Now'}
             </button>
           </div>
         </div>
