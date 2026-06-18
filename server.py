@@ -70,8 +70,19 @@ from telethon.errors import (
     UserBannedInChannelError,
     BotGroupsBlockedError
 )
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Telegram Suite API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    for session_name, client in list(ACTIVE_LISTENERS.items()):
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+    ACTIVE_LISTENERS.clear()
+
+app = FastAPI(title="Telegram Suite API", lifespan=lifespan)
 
 import os
 # Mount frontend dist if exists
@@ -1833,15 +1844,7 @@ async def start_invite_by_username(req: InviteByUsernameRequest, background_task
     return {"status": "started", "targets": len(cleaned), "accounts_used": len(req.accounts)}
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    # Disconnect all active listeners on shutdown
-    for session_name, client in list(ACTIVE_LISTENERS.items()):
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
-    ACTIVE_LISTENERS.clear()
+
 
 @app.get("/api/approver/status")
 def get_approver_status():
