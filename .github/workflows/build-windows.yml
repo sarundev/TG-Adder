@@ -29,10 +29,14 @@ jobs:
 
     - name: Zip Executable
       run: |
-        Compress-Archive -Path dist/TelegramSuiteGUI.exe -DestinationPath TelegramSuite_Windows.zip
+        Compress-Archive -Path dist/TelegramSuiteGUI.exe -DestinationPath downloads/TelegramSuite_Windows.zip -Force
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: TelegramSuite_Windows
-        path: TelegramSuite_Windows.zip
+    - name: Commit and Push
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add downloads/TelegramSuite_Windows.zip
+        git commit -m "Auto-build Windows executable [skip ci]" || echo "No changes to commit"
+        git push origin main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
