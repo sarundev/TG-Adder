@@ -223,6 +223,8 @@ app.add_middleware(
 # ── Configuration ──
 API_ID = 36597503
 API_HASH = "ce9a6d0c68789ae5234b77aa081acfac"
+import platform
+
 ACCOUNTS_DIR = "accounts"
 LOG_FILE = "logs.txt"
 
@@ -231,7 +233,19 @@ GLOBAL_CANCEL_FLAGS = {
     "inviter": False
 }
 
-os.makedirs(ACCOUNTS_DIR, exist_ok=True)
+try:
+    os.makedirs(ACCOUNTS_DIR, exist_ok=True)
+except PermissionError:
+    # Fallback if running from zip or restricted folder
+    home_dir = os.path.expanduser("~")
+    if platform.system() == "Windows":
+        base_dir = os.path.join(os.environ.get("LOCALAPPDATA", home_dir), "TG_TELE168_Data")
+    else:
+        base_dir = os.path.join(home_dir, ".tg_tele168_data")
+    
+    ACCOUNTS_DIR = os.path.join(base_dir, "accounts")
+    LOG_FILE = os.path.join(base_dir, "logs.txt")
+    os.makedirs(ACCOUNTS_DIR, exist_ok=True)
 # Global states
 PENDING_CLIENTS = {}
 LOG_BUFFER = []
