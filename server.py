@@ -24,8 +24,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
-if os.getenv("GEMINI_API_KEY"):
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY", "AIzaSyDHRVfsqebsu3I7zgBD-GHfyUL-L7ZQHjA"))
 
 try:
     # Dynamically patch opentele to fix BaseException error before importing
@@ -2481,7 +2480,8 @@ FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 @app.post("/api/support/chat")
 async def support_chat(req: ChatRequest):
-    if not os.getenv("GEMINI_API_KEY"):
+    api_key = os.getenv("GEMINI_API_KEY", "AIzaSyDHRVfsqebsu3I7zgBD-GHfyUL-L7ZQHjA")
+    if not api_key:
         return {"status": "error", "detail": "AI support is currently offline (API key not configured)."}
     try:
         model = genai.GenerativeModel('gemini-2.5-flash')
