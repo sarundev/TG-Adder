@@ -2494,6 +2494,10 @@ async def support_chat(req: ChatRequest):
                 "parts": [{"text": p.text} for p in msg.parts]
             })
             
+        # Gemini API requires the history to start with a 'user' message
+        if formatted_history and formatted_history[0]["role"] == "model":
+            formatted_history.pop(0)
+            
         chat = model.start_chat(history=formatted_history)
         
         system_instruction = (
