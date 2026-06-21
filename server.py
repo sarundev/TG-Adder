@@ -87,7 +87,7 @@ app = FastAPI(title="Telegram Suite API", lifespan=lifespan)
 import os
 # Mount frontend dist if exists
 frontend_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-downloads_path = os.path.join(os.path.dirname(__file__), "downloads")
+downloads_path = os.path.expanduser("~/Downloads/TG_Media_Downloads")
 os.makedirs(downloads_path, exist_ok=True)
 
 if os.path.exists(frontend_path):
@@ -142,6 +142,7 @@ class MediaDownloadRequest(BaseModel):
     account: str
     target_chat: str
     limit: int = 100
+    save_path: str = ""
 
 async def _media_download_task(req: MediaDownloadRequest):
     global LOG_BUFFER
@@ -158,7 +159,10 @@ async def _media_download_task(req: MediaDownloadRequest):
         target_entity = await client.get_entity(req.target_chat)
         
         safe_name = req.target_chat.replace("/", "_").replace(":", "_").replace("https___t.me_", "")
-        download_dir = os.path.join(downloads_path, "videos", safe_name)
+        if req.save_path:
+            download_dir = os.path.join(req.save_path, safe_name)
+        else:
+            download_dir = os.path.join(downloads_path, "videos", safe_name)
         os.makedirs(download_dir, exist_ok=True)
         
         video_count = 0
@@ -171,25 +175,25 @@ async def _media_download_task(req: MediaDownloadRequest):
                 
         log_msg(f"📊 Found {len(messages_to_download)} videos. Starting optimized concurrent download...")
         
-        # Download in batches of 5 to optimize speed without rate-limiting
-        batch_size = 5
-        for i in range(0, len(messages_to_download), batch_size):
-            batch = messages_to_download[i:i+batch_size]
-            log_msg(f"⚡ Downloading batch {i//batch_size + 1}/{(len(messages_to_download)+batch_size-1)//batch_size}...")
-            
-            tasks = []
-            for msg in batch:
-                tasks.append(client.download_media(msg, file=download_dir))
-                
-            await asyncio.gather(*tasks)
-            video_count += len(batch)
-            log_msg(f"✅ Batch completed. ({video_count}/{len(messages_to_download)})")
+        # Download sequentially to prevent SQLite/Telethon connection deadlocks
+        video_count = 0
+        for i, msg in enumerate(messages_to_download):
+            log_msg(f"⚡ Downloading video {i+1}/{len(messages_to_download)}...")
+            await client.download_media(msg, file=download_dir)
+            video_count += 1
+            log_msg(f"✅ Video {i+1} completed.")
                 
         log_msg(f"🎉 Media Downloader finished! Total videos downloaded: {video_count}")
         log_msg(f"📁 Saved to: {download_dir}")
         
     except Exception as e:
         log_msg(f"❌ Error downloading media: {str(e)}")
+    finally:
+        if 'client' in locals() and client:
+            try:
+                await client.disconnect()
+            except Exception as e:
+                log_msg(f"⚠️ Warning during client disconnect: {str(e)}")
 
 @app.post("/api/media/download")
 async def start_media_download(req: MediaDownloadRequest, background_tasks: BackgroundTasks):
@@ -425,6 +429,11 @@ def verify_license(req: LicenseVerifyRequest):
     license_data = licenses[token]
     
     if not license_data.get("hwid"):
+        # Remove any existing licenses for this HWID to prevent conflicts
+        keys_to_remove = [k for k, v in licenses.items() if v.get("hwid") == hwid]
+        for k in keys_to_remove:
+            del licenses[k]
+            
         license_data["hwid"] = hwid
         
         # Start the expiration timer upon first use

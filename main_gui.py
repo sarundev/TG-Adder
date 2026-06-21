@@ -11,7 +11,7 @@ from tkinter import messagebox, filedialog
 from server import app
 
 API_BASE = "http://127.0.0.1:8000/api"
-LICENSE_API_BASE = "https://web-production-89e12.up.railway.app/api"
+LICENSE_API_BASE = "http://127.0.0.1:8000/api"
 
 # Modern Professional SaaS Theme Colors
 BG_MAIN = "#121212"
@@ -116,11 +116,11 @@ class ModernApp(ctk.CTk):
 
     def check_license(self):
         try:
-            if not os.path.exists(os.path.expanduser("~/.tele168_license.txt")):
+            if not os.path.exists(".license_token"):
                 self.show_license_login()
                 return
                 
-            with open(os.path.expanduser("~/.tele168_license.txt"), "r") as f:
+            with open(".license_token", "r") as f:
                 token = f.read().strip()
                 
             if not token:
@@ -131,6 +131,8 @@ class ModernApp(ctk.CTk):
             if res.status_code == 200:
                 self.unlock_app()
             else:
+                if os.path.exists(".license_token"):
+                    os.remove(".license_token")
                 self.show_license_login(error=res.json().get('detail', 'License expired or invalid'))
         except Exception:
             self.show_license_login()
@@ -177,7 +179,7 @@ class ModernApp(ctk.CTk):
             try:
                 res = requests.post(f"{LICENSE_API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=5)
                 if res.status_code == 200:
-                    with open(os.path.expanduser("~/.tele168_license.txt"), "w") as f:
+                    with open(".license_token", "w") as f:
                         f.write(token)
                     status_label.configure(text="License Verified! Unlocking...", text_color=ACCENT_SUCCESS)
                     self.update()
@@ -348,7 +350,7 @@ class ModernApp(ctk.CTk):
         self.login_status = self.create_status_label()
 
     def upload_tdata(self):
-        file_path = filedialog.askopenfilename(filetypes=[("ZIP files", "*.zip")], title="Select TData ZIP")
+        file_path = filedialog.askopenfilename(parent=self, filetypes=[("ZIP files", "*.zip")], title="Select TData ZIP")
         if not file_path: return
         
         self.set_status(self.login_status, "Uploading and converting TData...")
@@ -608,7 +610,7 @@ class ModernApp(ctk.CTk):
         try:
             res = requests.get(f"{API_BASE}/scraper/export/{self.scrape_cache_id}")
             if res.status_code == 200:
-                save_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")], title="Save Scraped Data")
+                save_path = filedialog.asksaveasfilename(parent=self, defaultextension=".csv", filetypes=[("CSV files", "*.csv")], title="Save Scraped Data")
                 if save_path:
                     with open(save_path, "wb") as f:
                         f.write(res.content)
@@ -621,7 +623,7 @@ class ModernApp(ctk.CTk):
         try:
             res = requests.get(f"{API_BASE}/scraper/export-txt/{self.scrape_cache_id}")
             if res.status_code == 200:
-                save_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")], title="Save Scraped Usernames")
+                save_path = filedialog.asksaveasfilename(parent=self, defaultextension=".txt", filetypes=[("Text files", "*.txt")], title="Save Scraped Usernames")
                 if save_path:
                     with open(save_path, "wb") as f:
                         f.write(res.content)
@@ -786,7 +788,20 @@ class ModernApp(ctk.CTk):
         target_chat.pack(fill="x", padx=40, pady=10)
         
         limit_input = self.create_input("Number of messages to scan back (default: 100)")
-        limit_input.pack(fill="x", padx=40, pady=(10, 30))
+        limit_input.pack(fill="x", padx=40, pady=(10, 10))
+        
+        self.download_folder = ""
+        folder_label = ctk.CTkLabel(self.main_frame, text="Save to: Default Downloads Folder", font=ctk.CTkFont(family=FONT_MAIN, size=13))
+        folder_label.pack(pady=(0, 5))
+        
+        def choose_folder():
+            folder = filedialog.askdirectory(parent=self, title="Select Folder to Save Media")
+            if folder:
+                self.download_folder = folder
+                folder_label.configure(text=f"Save to: {folder}")
+                
+        folder_btn = self.create_action_btn("📂 Select Download Folder", choose_folder, color="#3B82F6", hover="#2563EB")
+        folder_btn.pack(fill="x", padx=40, pady=(0, 20))
         
         self.media_status = self.create_status_label()
 
@@ -800,15 +815,21 @@ class ModernApp(ctk.CTk):
                 messagebox.showwarning("Error", "Enter a target group or channel.")
                 return
                 
-            try:
-                res = requests.post(f"{API_BASE}/media/download", json={
-                    "account": acc,
-                    "target_chat": target,
-                    "limit": int(limit_input.get() or 100)
-                }).json()
-                self.set_status(self.media_status, res.get("message", "Downloader started!"), is_success=True)
-            except Exception as e:
-                self.set_status(self.media_status, f"Error: {str(e)}", is_error=True)
+            self.set_status(self.media_status, "Sending request to background server...", is_success=True)
+            
+            def run_request():
+                try:
+                    res = requests.post(f"{API_BASE}/media/download", json={
+                        "account": acc,
+                        "target_chat": target,
+                        "limit": int(limit_input.get() or 100),
+                        "save_path": self.download_folder
+                    }).json()
+                    self.after(0, lambda: self.set_status(self.media_status, res.get("message", "Downloader started! Check Terminal Logs for progress."), is_success=True))
+                except Exception as e:
+                    self.after(0, lambda: self.set_status(self.media_status, f"Error: {str(e)}", is_error=True))
+                    
+            threading.Thread(target=run_request, daemon=True).start()
 
         btn = self.create_action_btn("🎬 Start Video Downloader", start_media_download)
         btn.pack(fill="x", padx=40, pady=10)
@@ -872,6 +893,7 @@ class ModernApp(ctk.CTk):
             return
             
         file_path = filedialog.asksaveasfilename(
+            parent=self,
             defaultextension=".txt", 
             initialfile="terminal_logs.txt", 
             title="Save Terminal Logs",

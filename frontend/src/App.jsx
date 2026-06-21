@@ -221,40 +221,6 @@ function App() {
           </div>
         </div>
       </section>
-
-      {/* Account Store */}
-      <section className="pricing-section" style={{ backgroundColor: '#f9fafb', borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>
-        <h2 className="section-title" style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '2.5rem' }}>Buy Telegram Accounts (TData)</h2>
-        <p style={{ textAlign: 'center', marginBottom: '3rem', color: '#6b7280' }}>High-quality Telegram accounts delivered instantly as TData ZIP files. Ready to load into the tool.</p>
-        <div className="pricing-cards">
-          <div className="price-card">
-            <h3>Fresh Account</h3>
-            <div className="price">$0.50</div>
-            <p>Freshly registered on premium numbers. Best for mass inviting.</p>
-            <button className="btn btn-secondary" onClick={() => handleBuyAccount('fresh')} disabled={buying}>
-              {buying ? 'Processing...' : 'Buy Now'}
-            </button>
-          </div>
-          <div className="price-card popular">
-            <div className="popular-badge">High Trust</div>
-            <h3>Aged Account</h3>
-            <div className="price">$2.00</div>
-            <p>Aged 3+ months. High trust score, much lower ban rate.</p>
-            <button className="btn btn-primary" onClick={() => handleBuyAccount('aged')} disabled={buying}>
-              {buying ? 'Processing...' : 'Buy Now'}
-            </button>
-          </div>
-          <div className="price-card">
-            <h3>Admin Account</h3>
-            <div className="price">$5.00</div>
-            <p>Premium 1-year aged accounts. Perfect for group administration.</p>
-            <button className="btn btn-secondary" onClick={() => handleBuyAccount('admin')} disabled={buying}>
-              {buying ? 'Processing...' : 'Buy Now'}
-            </button>
-          </div>
-        </div>
-      </section>
-
       {/* Pricing */}
       <section className="pricing-section">
         <h2 className="section-title" style={{ textAlign: 'center', marginBottom: '3rem', fontSize: '2.5rem' }}>Choose Your License</h2>

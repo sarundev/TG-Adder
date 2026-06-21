@@ -29,7 +29,7 @@ if getattr(sys, 'frozen', False) and len(sys.argv) > 1 and sys.argv[1].endswith(
     runpy.run_path(script_to_run, run_name="__main__")
     sys.exit(0)
 
-SERVER_URL = "https://web-production-89e12.up.railway.app" # Pointing to live Railway server
+SERVER_URL = "http://127.0.0.1:8000" # Pointing to local server
 
 def get_base_path():
     """Get absolute path to resource, works for dev and for PyInstaller"""

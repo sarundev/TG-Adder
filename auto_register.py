@@ -15,7 +15,7 @@ API_HASH = "b18441a1ff607e10a989891a5462e627"
 
 # Choose your SMS provider. For this example, we'll use 5sim.net
 # You can change this to smshub, sms-activate, etc.
-SMS_API_KEY = "YOUR_SMS_API_KEY_HERE"
+SMS_API_KEY = "eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE4MTMzNDEzNzgsImlhdCI6MTc4MTgwNTM3OCwicmF5IjoiNTZhZGViMDQ0NDAxMmY3MDQ0OTk4YmYwYzE5OTE3MTEiLCJzdWIiOjQyMjc5Nzd9.zFgy1BMMXLllXDK9vJ2V_AItgIOo7IwZgji4tmPPbqYb8vLaXhsQBNlhakTCEffQU3XCiUnH2sxtdx0oPigx1tWcuh-OCLB1GQ-i4B-CBJOAYgNndW8P-gz558K1yovYjOPFIqsHRxoQ8JdiypdOM_K_t0TFonIJ126K8vTgh5313Ku8TffKsGT_KfKyvvXz5i4Jw6-Yfnf_IVJPENDzzMQJ_3Zk8KSHlc6CXtj9EjF8QNizkfI_Soffx4ZneTCn7WpGd7eVgAhjkWkgebopeIp0j-aFfZ4brhN9xkmxFv_nggEBwb2EIsw4K3A0ZFjgCjsh_LMTjB9axwue_l15zw"
 SMS_PROVIDER_URL = "https://5sim.net/v1/user" # Example for 5sim
 
 FIRST_NAMES = ["John", "David", "Michael", "Sarah", "Emma", "Anna", "Lisa", "James", "Robert"]
@@ -30,7 +30,7 @@ def zip_folder(folder_path, output_path):
                 arcname = os.path.relpath(file_path, os.path.dirname(folder_path))
                 zipf.write(file_path, arcname)
 
-async def get_phone_number(country="russia", operator="any"):
+async def get_phone_number(country="cambodia", operator="any"):
     """Fetch a phone number from the SMS API."""
     print("Requesting phone number...")
     # Example using 5sim.net API
@@ -42,7 +42,16 @@ async def get_phone_number(country="russia", operator="any"):
         print(f"Error buying number: {response.text}")
         return None, None
         
-    data = response.json()
+    try:
+        data = response.json()
+    except Exception:
+        print(f"Failed to buy number. API Response: {response.text.strip()}")
+        if "no free phones" in response.text:
+            print("Tip: 5sim has no phones left for this country. Try changing 'russia' to another country in the code.")
+        elif "not enough" in response.text:
+            print("Tip: Telegram numbers usually cost 15-30 rubles. Your 5sim balance is only 5 rubles. Please add more funds!")
+        return None, None
+        
     order_id = data.get("id")
     phone = data.get("phone")
     print(f"Got phone number: {phone} (Order ID: {order_id})")
@@ -81,7 +90,14 @@ async def create_account():
 
     # 2. Start Telethon
     session_name = phone.replace("+", "")
-    client = TelegramClient(session_name, API_ID, API_HASH)
+    client = TelegramClient(
+        session_name, 
+        api_id=API_ID, 
+        api_hash=API_HASH,
+        system_version="4.1.6 API",
+        device_model="Desktop",
+        app_version="4.2.4"
+    )
     await client.connect()
     
     try:
@@ -124,7 +140,9 @@ async def create_account():
         print(f"Done! Your new account is ready in {zip_filename}")
         
     except Exception as e:
+        import traceback
         print(f"An error occurred: {e}")
+        print(traceback.format_exc())
     finally:
         await client.disconnect()
         # Clean up temporary files
