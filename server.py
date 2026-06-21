@@ -2513,8 +2513,10 @@ async def support_chat(req: ChatRequest):
         response = chat.send_message(full_message)
         return {"status": "success", "reply": response.text}
     except Exception as e:
-        log_msg(f"Gemini API Error: {str(e)}")
-        return {"status": "error", "detail": "Failed to communicate with AI support."}
+        import traceback
+        err_msg = traceback.format_exc()
+        log_msg(f"Gemini API Error: {err_msg}")
+        return {"status": "error", "detail": f"AI Error: {str(e)}"}
 
 if os.path.exists(FRONTEND_DIST):
     pass
