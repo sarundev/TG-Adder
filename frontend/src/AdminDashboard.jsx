@@ -131,7 +131,7 @@ function AdminDashboard({ onBack }) {
       showToast('Failed to fetch licenses', 'error');
     }
     setLoading(false);
-  }, []);
+  }, [adminKey]);
 
   useEffect(() => {
     fetchLicenses();
