@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './AdminDashboard.css';
 
-const DEFAULT_ADMIN_KEY = 'admin123';
-
 function AdminDashboard({ onBack }) {
-  const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_key') || DEFAULT_ADMIN_KEY);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const [adminKey, setAdminKey] = useState('');
   const [activeTab, setActiveTab] = useState('devices');
   const [licenses, setLicenses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,7 +18,103 @@ function AdminDashboard({ onBack }) {
   const [generating, setGenerating] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
   const [toast, setToast] = useState(null);
-  const [settingsForm, setSettingsForm] = useState({ newAdminKey: adminKey, confirmKey: '' });
+  const [settingsForm, setSettingsForm] = useState({ newAdminKey: '', confirmKey: '' });
+
+  // Auto-login if session exists
+  useEffect(() => {
+    const savedKey = sessionStorage.getItem('admin_session');
+    if (savedKey) {
+      setAdminKey(savedKey);
+      setIsLoggedIn(true);
+      setSettingsForm(prev => ({ ...prev, newAdminKey: savedKey }));
+    }
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!loginPassword.trim()) {
+      setLoginError('Please enter admin password');
+      return;
+    }
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const res = await fetch(`/api/license/list?admin_key=${encodeURIComponent(loginPassword.trim())}`);
+      if (res.ok) {
+        const key = loginPassword.trim();
+        setAdminKey(key);
+        sessionStorage.setItem('admin_session', key);
+        setSettingsForm(prev => ({ ...prev, newAdminKey: key }));
+        setIsLoggedIn(true);
+      } else {
+        setLoginError('Invalid admin password');
+      }
+    } catch (e) {
+      setLoginError('Cannot connect to server');
+    }
+    setLoginLoading(false);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('admin_session');
+    setIsLoggedIn(false);
+    setAdminKey('');
+    setLoginPassword('');
+    setLicenses([]);
+  };
+
+  // Login Screen
+  if (!isLoggedIn) {
+    return (
+      <div className="admin-login-page">
+        <div className="admin-login-card">
+          <div className="admin-login-header">
+            <div className="admin-login-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+            </div>
+            <h1>Admin Panel</h1>
+            <p>Enter your admin password to continue</p>
+          </div>
+          <form className="admin-login-form" onSubmit={handleLogin}>
+            <div className="admin-login-field">
+              <label>Password</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
+                placeholder="Enter admin password"
+                autoFocus
+                className={loginError ? 'input-error' : ''}
+              />
+              {loginError && <span className="admin-login-error">{loginError}</span>}
+            </div>
+            <button type="submit" className="admin-login-btn" disabled={loginLoading}>
+              {loginLoading ? (
+                <><span className="admin-btn-spinner" /> Authenticating...</>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                  Sign In
+                </>
+              )}
+            </button>
+          </form>
+          <button className="admin-login-back" onClick={onBack}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="19" y1="12" x2="5" y2="12"/>
+              <polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to website
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -199,7 +298,15 @@ function AdminDashboard({ onBack }) {
           </button>
         </nav>
         <div className="admin-sidebar-footer">
-          <button className="admin-back-btn" onClick={onBack}>
+          <button className="admin-back-btn" onClick={handleLogout}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Logout
+          </button>
+          <button className="admin-back-btn" onClick={onBack} style={{ marginTop: '10px' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="19" y1="12" x2="5" y2="12"/>
               <polyline points="12 19 5 12 12 5"/>
@@ -459,8 +566,8 @@ function AdminDashboard({ onBack }) {
                       const key = settingsForm.newAdminKey.trim();
                       if (!key) return showToast('Key cannot be empty', 'error');
                       setAdminKey(key);
-                      localStorage.setItem('admin_key', key);
-                      showToast('Admin key saved to browser');
+                      sessionStorage.setItem('admin_session', key);
+                      showToast('Admin key updated in session');
                       fetchLicenses();
                     }}>
                       Save Key
