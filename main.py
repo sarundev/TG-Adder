@@ -63,10 +63,11 @@ def verify_license():
             sys.exit(1)
             
     hwid = get_hwid()
+    computer_model = f"{platform.system()} {platform.machine()} ({platform.node()})"
     
     console.print("\n[bold yellow]Authenticating with licensing server...[/bold yellow]")
     try:
-        data = json.dumps({"token": token, "hwid": hwid}).encode('utf-8')
+        data = json.dumps({"token": token, "hwid": hwid, "computer_model": computer_model}).encode('utf-8')
         req = urllib.request.Request(f"{SERVER_URL}/api/license/verify", data=data, headers={'Content-Type': 'application/json'})
         
         with urllib.request.urlopen(req, timeout=10) as response:

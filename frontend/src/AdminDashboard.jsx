@@ -453,7 +453,8 @@ function AdminDashboard({ onBack }) {
                       <th>#</th>
                       <th>License Key</th>
                       <th>Status</th>
-                      <th>HWID (Device)</th>
+                      <th>HWID</th>
+                      <th>Device Info</th>
                       <th>Duration</th>
                       <th>Expires</th>
                       <th>Created</th>
@@ -486,6 +487,16 @@ function AdminDashboard({ onBack }) {
                           <td className="col-hwid">
                             {lic.hwid ? (
                               <code className="hwid-text">{lic.hwid.substring(0, 16)}...</code>
+                            ) : (
+                              <span className="hwid-none">—</span>
+                            )}
+                          </td>
+                          <td className="col-device-info">
+                            {lic.computer_model ? (
+                              <div className="device-details">
+                                <div className="device-model" style={{ fontSize: '0.8125rem', color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={lic.computer_model}>{lic.computer_model}</div>
+                                {lic.last_ip && <div className="device-ip" style={{ fontSize: '0.75rem', color: '#94a3b8' }}>IP: {lic.last_ip}</div>}
+                              </div>
                             ) : (
                               <span className="hwid-none">—</span>
                             )}

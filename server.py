@@ -11,7 +11,7 @@ import zipfile
 from datetime import datetime, timezone
 import io
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -405,6 +405,7 @@ class WarmRequest(BaseModel):
 class LicenseVerifyRequest(BaseModel):
     token: str
     hwid: str
+    computer_model: str = None
 
 class LicenseGenerateRequest(BaseModel):
     admin_key: str
@@ -429,7 +430,7 @@ def save_licenses(data):
         json.dump(data, f, indent=4)
 
 @app.post("/api/license/verify")
-def verify_license(req: LicenseVerifyRequest):
+def verify_license(req: LicenseVerifyRequest, request: Request):
     licenses = load_licenses()
     token = req.token.strip()
     hwid = req.hwid.strip()
@@ -457,6 +458,8 @@ def verify_license(req: LicenseVerifyRequest):
             expire_date = datetime.now(timezone.utc) + timedelta(days=duration_days)
             license_data["expires_at"] = expire_date.isoformat()
             
+        license_data["computer_model"] = req.computer_model or license_data.get("computer_model")
+        license_data["last_ip"] = request.client.host
         save_licenses(licenses)
         return {"status": "success", "detail": "Token bound to device successfully"}
         
@@ -471,6 +474,11 @@ def verify_license(req: LicenseVerifyRequest):
         if datetime.now(timezone.utc) > expires_at:
             raise HTTPException(status_code=401, detail="License has expired")
         
+    # Update latest IP and model on successful verify
+    license_data["computer_model"] = req.computer_model or license_data.get("computer_model")
+    license_data["last_ip"] = request.client.host
+    save_licenses(licenses)
+    
     return {"status": "success", "detail": "Token verified"}
 
 @app.post("/api/license/generate")
@@ -625,7 +633,9 @@ def list_licenses(admin_key: str):
             "bound":      data.get("hwid") is not None,
             "created_at": data.get("created_at", ""),
             "duration":   data.get("duration_label", "lifetime"),
-            "expires_at": data.get("expires_at", "Never")
+            "expires_at": data.get("expires_at", "Never"),
+            "computer_model": data.get("computer_model"),
+            "last_ip": data.get("last_ip")
         })
     return {"count": len(result), "keys": result}
 
