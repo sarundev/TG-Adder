@@ -11,7 +11,7 @@ from tkinter import messagebox, filedialog
 from server import app
 
 API_BASE = "http://127.0.0.1:8000/api"
-LICENSE_API_BASE = "http://127.0.0.1:8000/api"
+LICENSE_API_BASE = "https://web-production-89e12.up.railway.app/api"
 
 # Modern Professional SaaS Theme Colors
 BG_MAIN = "#121212"
