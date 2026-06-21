@@ -63,58 +63,7 @@ function AdminDashboard({ onBack }) {
     setLicenses([]);
   };
 
-  // Login Screen
-  if (!isLoggedIn) {
-    return (
-      <div className="admin-login-page">
-        <div className="admin-login-card">
-          <div className="admin-login-header">
-            <div className="admin-login-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-              </svg>
-            </div>
-            <h1>Admin Panel</h1>
-            <p>Enter your admin password to continue</p>
-          </div>
-          <form className="admin-login-form" onSubmit={handleLogin}>
-            <div className="admin-login-field">
-              <label>Password</label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
-                placeholder="Enter admin password"
-                autoFocus
-                className={loginError ? 'input-error' : ''}
-              />
-              {loginError && <span className="admin-login-error">{loginError}</span>}
-            </div>
-            <button type="submit" className="admin-login-btn" disabled={loginLoading}>
-              {loginLoading ? (
-                <><span className="admin-btn-spinner" /> Authenticating...</>
-              ) : (
-                <>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                  </svg>
-                  Sign In
-                </>
-              )}
-            </button>
-          </form>
-          <button className="admin-login-back" onClick={onBack}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="19" y1="12" x2="5" y2="12"/>
-              <polyline points="12 19 5 12 12 5"/>
-            </svg>
-            Back to website
-          </button>
-        </div>
-      </div>
-    );
-  }
+
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -260,6 +209,59 @@ function AdminDashboard({ onBack }) {
     '1_year': '1 Year',
     'lifetime': 'Lifetime'
   };
+
+  // Login Screen
+  if (!isLoggedIn) {
+    return (
+      <div className="admin-login-page">
+        <div className="admin-login-card">
+          <div className="admin-login-header">
+            <div className="admin-login-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+            </div>
+            <h1>Admin Panel</h1>
+            <p>Enter your admin password to continue</p>
+          </div>
+          <form className="admin-login-form" onSubmit={handleLogin}>
+            <div className="admin-login-field">
+              <label>Password</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
+                placeholder="Enter admin password"
+                autoFocus
+                className={loginError ? 'input-error' : ''}
+              />
+              {loginError && <span className="admin-login-error">{loginError}</span>}
+            </div>
+            <button type="submit" className="admin-login-btn" disabled={loginLoading}>
+              {loginLoading ? (
+                <><span className="admin-btn-spinner" /> Authenticating...</>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                  Sign In
+                </>
+              )}
+            </button>
+          </form>
+          <button className="admin-login-back" onClick={onBack}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="19" y1="12" x2="5" y2="12"/>
+              <polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to website
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-dashboard">
