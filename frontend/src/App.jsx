@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './index.css';
 import AdminDashboard from './AdminDashboard';
-
+import ChatWidget from './ChatWidget';
 function App() {
   const [page, setPage] = useState(window.location.hash === '#admin' ? 'admin' : 'home');
   const [buying, setBuying] = useState(false);
@@ -287,6 +287,8 @@ function App() {
       <footer className="footer">
         <p>&copy; {new Date().getFullYear()} TelegramSuite. All rights reserved.</p>
       </footer>
+
+      <ChatWidget />
     </div>
   );
 }

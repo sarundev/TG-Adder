@@ -20,6 +20,12 @@ from telethon import TelegramClient, events, functions
 from telethon.sessions import SQLiteSession
 import sqlite3
 import importlib.util
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
+if os.getenv("GEMINI_API_KEY"):
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 try:
     # Dynamically patch opentele to fix BaseException error before importing
@@ -400,6 +406,17 @@ class WarmRequest(BaseModel):
     messages_to_send: int = 3
     react_delay: float = 10.0
     chat_delay: float = 20.0
+
+# --- Support Models ---
+class ChatMessagePart(BaseModel):
+    text: str
+
+class ChatMessage(BaseModel):
+    role: str
+    parts: List[ChatMessagePart]
+
+class ChatRequest(BaseModel):
+    history: List[ChatMessage]
 
 # --- License Models ---
 class LicenseVerifyRequest(BaseModel):
@@ -2461,6 +2478,39 @@ from fastapi.responses import FileResponse
 
 # Serve static files if they exist (for Railway / production)
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+
+@app.post("/api/support/chat")
+async def support_chat(req: ChatRequest):
+    if not os.getenv("GEMINI_API_KEY"):
+        return {"status": "error", "detail": "AI support is currently offline (API key not configured)."}
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        # Format history for Gemini
+        formatted_history = []
+        for msg in req.history[:-1]:
+            formatted_history.append({
+                "role": "model" if msg.role == "model" else "user",
+                "parts": [{"text": p.text} for p in msg.parts]
+            })
+            
+        chat = model.start_chat(history=formatted_history)
+        
+        system_instruction = (
+            "You are a helpful AI support agent for Telegram Suite / TG Adder. "
+            "You help users navigate the dashboard, understand how to generate licenses, "
+            "and manage devices. Keep your answers concise, friendly, and helpful."
+        )
+        
+        # Include system prompt in the latest message for context
+        latest_message = req.history[-1].parts[0].text
+        full_message = f"System Instruction: {system_instruction}\n\nUser Question: {latest_message}"
+        
+        response = chat.send_message(full_message)
+        return {"status": "success", "reply": response.text}
+    except Exception as e:
+        log_msg(f"Gemini API Error: {str(e)}")
+        return {"status": "error", "detail": "Failed to communicate with AI support."}
 
 if os.path.exists(FRONTEND_DIST):
     pass
