@@ -1,8 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import './index.css';
+import AdminDashboard from './AdminDashboard';
 
 function App() {
+  const [page, setPage] = useState(window.location.hash === '#admin' ? 'admin' : 'home');
   const [buying, setBuying] = useState(false);
+
+  // Listen for hash changes
+  useEffect(() => {
+    const onHashChange = () => {
+      setPage(window.location.hash === '#admin' ? 'admin' : 'home');
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  if (page === 'admin') {
+    return <AdminDashboard onBack={() => { window.location.hash = ''; setPage('home'); }} />;
+  }
 
   const handleBuyAccount = async (accountType) => {
     if (buying) return;
