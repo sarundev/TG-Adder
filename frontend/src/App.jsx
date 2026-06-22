@@ -268,7 +268,7 @@ function App() {
                 disabled={buying}
                 id={`buy-${plan.key}`}
               >
-                {buying ? 'Processing…' : 'Buy Now'}
+                {buying ? 'Processing…' : plan.price === 'Free' ? 'Download' : 'Buy Now'}
               </button>
             </div>
           ))}
