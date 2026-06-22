@@ -213,6 +213,12 @@ class App(ctk.CTk):
             text_color=C_CYAN
         )
         self._api_status_lbl.place(relx=0.25, rely=0.5, anchor="w")
+        
+        contact_lbl = ctk.CTkLabel(
+            pill, text="Support: @sarun_chann",
+            font=("Courier", 11), text_color=C_TEXT3
+        )
+        contact_lbl.pack(pady=(12, 0))
 
     # ─── CONTENT AREA ─────────────────────────
     def _build_content(self):
@@ -270,7 +276,34 @@ class App(ctk.CTk):
                 self._show_license(error=r.json().get("detail", "License invalid or expired."))
         except Exception:
             self._show_license()
+            
+        if getattr(self, '_license_loop_started', False) is False:
+            self._license_loop_started = True
+            self.after(10000, self._real_time_license_check)
+
+    def _real_time_license_check(self):
+        threading.Thread(target=self._license_check_bg, daemon=True).start()
+        self.after(10000, self._real_time_license_check)
+
+    def _license_check_bg(self):
+        if getattr(self, 'is_locked', False):
+            return
+        try:
+            if not os.path.exists(".license_token"):
+                self.after(0, self._show_license)
+                return
+            with open(".license_token") as f:
+                token = f.read().strip()
+            r = requests.post(f"{LICENSE_API_BASE}/license/verify", json={"token": token, "hwid": self.hwid}, timeout=5)
+            if r.status_code != 200:
+                if os.path.exists(".license_token"): os.remove(".license_token")
+                try: err_msg = r.json().get("detail", "License invalid or expired.")
+                except: err_msg = "License invalid or expired."
+                self.after(0, self._show_license, err_msg)
+        except Exception:
+            pass
     def _unlock(self, data=None):
+        self.is_locked = False
         self.sidebar.grid()
         self._select("Dashboard", self.show_dashboard)
         
@@ -293,6 +326,8 @@ class App(ctk.CTk):
                 self._api_status_lbl.configure(text=dur_text)
 
     def _show_license(self, error=""):
+        self.is_locked = True
+        self.sidebar.grid_remove() # Lock the user out of the app
         for w in self.content.winfo_children():
             w.destroy()
 
@@ -320,10 +355,21 @@ class App(ctk.CTk):
         logo_ring = ctk.CTkFrame(left_pane, width=90, height=90, fg_color="transparent", border_width=2, border_color=C_CYAN, corner_radius=45)
         logo_ring.pack(pady=(100, 20))
         logo_ring.pack_propagate(False)
-        ctk.CTkLabel(logo_ring, text="🚀", font=("Helveletica", 36)).place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Professional Minimalist "T" Logo
+        t_bar = ctk.CTkFrame(logo_ring, width=36, height=6, fg_color=C_CYAN, corner_radius=3)
+        t_bar.place(relx=0.5, rely=0.35, anchor="center")
+        t_stem = ctk.CTkFrame(logo_ring, width=6, height=32, fg_color=C_CYAN, corner_radius=3)
+        t_stem.place(relx=0.5, rely=0.55, anchor="center")
         
         ctk.CTkLabel(left_pane, text="TELE168 PRO", font=("Courier", 24, "bold"), text_color=C_TEXT).pack(pady=(0, 4))
         ctk.CTkLabel(left_pane, text="Advanced Telegram Automation", font=("Courier", 12), text_color=C_CYAN).pack()
+        
+        contact_frame = ctk.CTkFrame(left_pane, fg_color="transparent")
+        contact_frame.pack(side="bottom", pady=(0, 24))
+        ctk.CTkLabel(contact_frame, text="24/7 SUPPORT", font=("Courier", 10, "bold"), text_color=C_TEXT3).pack()
+        ctk.CTkLabel(contact_frame, text="Telegram: @sarun_chann", font=("Courier", 13, "bold"), text_color=C_TEXT).pack()
+        
         ctk.CTkLabel(left_pane, text=f"HWID: {self.hwid}", font=("Courier", 10), text_color=C_TEXT3).pack(side="bottom", pady=16)
 
         # ── Right Pane (Form) ──

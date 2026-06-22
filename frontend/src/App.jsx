@@ -199,8 +199,14 @@ function App() {
           </svg>
           TelegramSuite
         </div>
-        <div className="navbar-right">
-          <a href="https://github.com" target="_blank" rel="noreferrer" className="btn btn-secondary" style={{ padding: '0.5rem 1.125rem', fontSize: '0.875rem' }}>
+        <div className="navbar-right" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <a href="https://t.me/sarun_chann" target="_blank" rel="noreferrer" className="btn" style={{ color: '#0088cc', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.08-.19-.09-.05-.21-.02-.3.01-.13.04-2.2 1.41-6.22 4.12-.59.4-1.12.6-1.59.59-.51-.01-1.49-.29-2.22-.53-.89-.29-1.6-.44-1.54-.93.03-.25.39-.5.1 1.07.75 1.63 1.25 3.32 1.76.62 1.35 1.27 2.19 2.05 2.45.69.23.95.83.82 1.5-.04.24-.04.53-.1.74-.23.51-.77 2.02-1.52.28 1.49.33 1.61 1.95 2.53 1.13.65 2.16 2.03 2.74 2.37.16.09.34.14.54.14.49 0 .9-.36 1.05-.88z"/>
+            </svg>
+            Live Support
+          </a>
+          <a href="#features" className="btn btn-secondary" style={{ padding: '0.5rem 1.125rem', fontSize: '0.875rem' }}>
             Documentation
           </a>
         </div>
@@ -280,7 +286,10 @@ function App() {
             TelegramSuite
           </div>
           <span className="footer-version">v1.0.1</span>
-          <p>© {new Date().getFullYear()} TelegramSuite. All rights reserved.</p>
+          <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--gray-400)' }}>
+            <a href="https://t.me/sarun_chann" target="_blank" rel="noreferrer" style={{ color: 'var(--gold-400)', textDecoration: 'none', fontWeight: 600 }}>Contact 24/7 Telegram Support</a>
+          </div>
+          <p style={{ marginTop: '1rem' }}>© {new Date().getFullYear()} TelegramSuite. All rights reserved.</p>
         </div>
       </footer>
 
