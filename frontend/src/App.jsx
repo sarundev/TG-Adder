@@ -180,7 +180,7 @@ function App() {
   ];
 
   const pricingPlans = [
-    { key: '1_week',   label: '1 Week',   price: '$5',   desc: 'Full access · 7 days' },
+    { key: '1_week',   label: '1 Week',   price: 'Free',   desc: 'Full access · 7 days' },
     { key: '1_month',  label: '1 Month',  price: '$15',  desc: 'Full access · 30 days' },
     { key: '3_months', label: '3 Months', price: '$40',  desc: 'Full access · 90 days' },
     { key: '1_year',   label: '1 Year',   price: '$100', desc: 'Best value for teams', popular: true },

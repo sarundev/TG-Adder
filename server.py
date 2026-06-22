@@ -736,8 +736,11 @@ def buy_license(req: LicenseBuyRequest):
     profile_id = "pNiGKZdBf8OMDhiIiRa5TmzCZiYJ16tB"
     secret_key = "GD2jqnaMErwOTV180AbNzWfjp5clLMPL"
     
-    price_map = {"1_week": 5.0, "1_month": 15.0, "3_months": 40.0, "1_year": 100.0, "lifetime": 199.0}
+    price_map = {"1_week": 0.0, "1_month": 15.0, "3_months": 40.0, "1_year": 100.0, "lifetime": 199.0}
     price = price_map.get(req.duration, 15.0)
+    
+    if price == 0.0:
+        return {"status": "redirect", "checkout_url": req.success_url}
     
     transaction_id = f"ORD_{int(time.time())}"
     success_url = req.success_url
