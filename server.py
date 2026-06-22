@@ -18,6 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from telethon import TelegramClient, events, functions
 from telethon.sessions import SQLiteSession
+from telethon.tl.functions.channels import EditAdminRequest
+from telethon.tl.functions.contacts import ImportContactsRequest
+from telethon.tl.types import ChatAdminRights, InputPhoneContact
 import sqlite3
 import importlib.util
 import google.generativeai as genai
@@ -150,6 +153,18 @@ class MediaDownloadRequest(BaseModel):
     limit: int = 100
     save_path: str = ""
 
+class VideoPostRequest(BaseModel):
+    accounts: list[str]
+    target_chat: str
+    folder_path: str
+    delay_sec: int = 15
+
+class PromoteAdminRequest(BaseModel):
+    admin_account: str
+    target_chat: str
+    accounts_to_promote: list[str]
+    delay_sec: int = 2
+
 async def _media_download_task(req: MediaDownloadRequest):
     global LOG_BUFFER
     log_msg(f"📥 Starting Video Downloader on {req.target_chat} using {req.account}...")
@@ -211,6 +226,155 @@ async def start_media_download(req: MediaDownloadRequest, background_tasks: Back
     background_tasks.add_task(_media_download_task, req)
     return {"status": "success", "message": f"Started scanning {req.target_chat} for videos..."}
 
+async def _auto_post_task(req: VideoPostRequest):
+    global LOG_BUFFER, GLOBAL_CANCEL_FLAGS
+    GLOBAL_CANCEL_FLAGS["auto_post"] = False
+    log_msg(f"🎬 Starting Auto Video Poster to {req.target_chat}...")
+    
+    if not os.path.exists(req.folder_path):
+        log_msg(f"❌ Error: Folder {req.folder_path} does not exist.")
+        return
+        
+    videos = [f for f in os.listdir(req.folder_path) if f.lower().endswith(('.mp4', '.mov', '.avi', '.mkv'))]
+    if not videos:
+        log_msg(f"❌ No video files found in {req.folder_path}")
+        return
+        
+    videos.sort()
+    log_msg(f"📊 Found {len(videos)} videos to post. Using {len(req.accounts)} accounts.")
+    
+    clients = []
+    try:
+        for acc in req.accounts:
+            c = make_client(os.path.join(ACCOUNTS_DIR, acc))
+            await c.connect()
+            if await c.is_user_authorized():
+                clients.append(c)
+            else:
+                log_msg(f"⚠️ Skipping unauthorized account {acc}")
+                await c.disconnect()
+                
+        if not clients:
+            log_msg("❌ No authorized accounts available for posting.")
+            return
+
+        client_idx = 0
+        for i, vid in enumerate(videos):
+            if GLOBAL_CANCEL_FLAGS.get("auto_post", False):
+                log_msg("🛑 Auto Video Poster stopped by user.")
+                break
+                
+            vid_path = os.path.join(req.folder_path, vid)
+            c = clients[client_idx % len(clients)]
+            
+            log_msg(f"📤 [{i+1}/{len(videos)}] Uploading {vid}...")
+            try:
+                await c.send_file(req.target_chat, vid_path)
+                log_msg(f"✅ Successfully posted {vid}")
+            except Exception as e:
+                log_msg(f"❌ Failed to post {vid}: {str(e)}")
+            
+            client_idx += 1
+            if i < len(videos) - 1 and not GLOBAL_CANCEL_FLAGS.get("auto_post", False):
+                log_msg(f"⏳ Waiting {req.delay_sec} seconds before next post...")
+                await asyncio.sleep(req.delay_sec)
+                
+        log_msg("🎉 Auto Video Poster finished!")
+    except Exception as e:
+        log_msg(f"❌ Critical error in auto poster: {str(e)}")
+    finally:
+        for c in clients:
+            await c.disconnect()
+
+@app.post("/api/media/auto-post")
+async def start_auto_post(req: VideoPostRequest, background_tasks: BackgroundTasks):
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="Select at least one account")
+    if not req.target_chat:
+        raise HTTPException(status_code=400, detail="Target chat is required")
+    if not req.folder_path:
+        raise HTTPException(status_code=400, detail="Folder path is required")
+        
+    background_tasks.add_task(_auto_post_task, req)
+    return {"status": "success", "message": f"Started auto-posting {req.folder_path} to {req.target_chat}"}
+
+@app.post("/api/media/auto-post/stop")
+def stop_auto_post():
+    GLOBAL_CANCEL_FLAGS["auto_post"] = True
+    return {"status": "success", "message": "Stopping auto poster..."}
+
+async def _promote_admin_task(req: PromoteAdminRequest):
+    global LOG_BUFFER
+    log_msg(f"👑 Starting Admin Promotion in {req.target_chat} using {req.admin_account}...")
+    
+    try:
+        admin_client = make_client(os.path.join(ACCOUNTS_DIR, req.admin_account))
+        await admin_client.connect()
+        if not await admin_client.is_user_authorized():
+            log_msg(f"❌ Admin account {req.admin_account} is unauthorized!")
+            return
+            
+        target_entity = await admin_client.get_entity(req.target_chat)
+        
+        rights = ChatAdminRights(
+            change_info=True, post_messages=True, edit_messages=True,
+            delete_messages=True, ban_users=True, invite_users=True,
+            pin_messages=True, add_admins=False, anonymous=False,
+            manage_call=True
+        )
+        
+        for i, acc in enumerate(req.accounts_to_promote):
+            if acc == req.admin_account:
+                log_msg(f"⚠️ [{i+1}/{len(req.accounts_to_promote)}] Skipping {acc}: Cannot promote the admin account itself!")
+                continue
+                
+            log_msg(f"🛡️ [{i+1}/{len(req.accounts_to_promote)}] Promoting {acc}...")
+            
+            try:
+                # Add as contact to ensure admin_client can 'see' the user entity
+                contact = InputPhoneContact(client_id=0, phone=f"+{acc}", first_name=f"Acc {acc}", last_name="")
+                result = await admin_client(ImportContactsRequest([contact]))
+                
+                if not result.users:
+                    log_msg(f"❌ Failed to resolve {acc} via phone number. Skipping.")
+                    continue
+                    
+                user_entity = result.users[0]
+                
+                await admin_client(EditAdminRequest(
+                    channel=target_entity,
+                    user_id=user_entity,
+                    admin_rights=rights,
+                    rank="Admin"
+                ))
+                log_msg(f"✅ Successfully promoted {acc} to Admin!")
+                
+            except Exception as e:
+                log_msg(f"❌ Failed to promote {acc}: {str(e)}")
+                
+            if i < len(req.accounts_to_promote) - 1:
+                await asyncio.sleep(req.delay_sec)
+                
+        log_msg("🎉 Admin Promotion finished!")
+        
+    except Exception as e:
+        log_msg(f"❌ Error during promotion: {str(e)}")
+    finally:
+        if 'admin_client' in locals() and admin_client:
+            await admin_client.disconnect()
+
+@app.post("/api/group/promote")
+async def start_promote_admin(req: PromoteAdminRequest, background_tasks: BackgroundTasks):
+    if not req.admin_account:
+        raise HTTPException(status_code=400, detail="Admin account is required")
+    if not req.accounts_to_promote:
+        raise HTTPException(status_code=400, detail="Select accounts to promote")
+    if not req.target_chat:
+        raise HTTPException(status_code=400, detail="Target chat is required")
+        
+    background_tasks.add_task(_promote_admin_task, req)
+    return {"status": "success", "message": f"Started promoting {len(req.accounts_to_promote)} accounts in {req.target_chat}..."}
+
 @app.get("/")
 def serve_frontend():
     if os.path.exists(frontend_path):
@@ -236,7 +400,8 @@ LOG_FILE = "logs.txt"
 
 # ── Global Cancellation Flags ──
 GLOBAL_CANCEL_FLAGS = {
-    "inviter": False
+    "inviter": False,
+    "auto_post": False
 }
 
 try:
@@ -254,7 +419,8 @@ except PermissionError:
     os.makedirs(ACCOUNTS_DIR, exist_ok=True)
 # Global states
 PENDING_CLIENTS = {}
-LOG_BUFFER = []
+LOG_BUFFERS = {"System": []}
+import sys
 SCRAPED_MEMBERS_CACHE = {}
 ACTIVE_LISTENERS = {}
 IS_INVITING = False
@@ -278,9 +444,26 @@ async def configure_session_db(client):
         pass  # Non-critical; proceed without WAL if unavailable
 
 def log_msg(msg: str):
-    LOG_BUFFER.append(msg)
-    if len(LOG_BUFFER) > 1000:
-        LOG_BUFFER.pop(0)
+    task = "System"
+    f = sys._getframe()
+    while f:
+        name = f.f_code.co_name
+        if name == "_bot_start_task": task = "Bot Clicker"; break
+        elif name == "_media_download_task": task = "Media Downloader"; break
+        elif name == "_auto_post_task": task = "Video Poster"; break
+        elif name == "_promote_admin_task": task = "Admin Promotor"; break
+        elif name == "group_to_group_invite_worker": task = "Group to Group"; break
+        elif name == "mass_invite_worker": task = "Mass Inviter"; break
+        elif name == "scrape_group": task = "Data Scraper"; break
+        elif name == "warm_account_worker": task = "Account Warmer"; break
+        elif name == "join_group_worker": task = "Mass Joiner"; break
+        f = f.f_back
+
+    if task not in LOG_BUFFERS:
+        LOG_BUFFERS[task] = []
+    LOG_BUFFERS[task].append(msg)
+    if len(LOG_BUFFERS[task]) > 1000:
+        LOG_BUFFERS[task].pop(0)
 
 def get_saved_sessions():
     if not os.path.exists(ACCOUNTS_DIR):
@@ -478,7 +661,12 @@ def verify_license(req: LicenseVerifyRequest, request: Request):
         license_data["computer_model"] = req.computer_model or license_data.get("computer_model")
         license_data["last_ip"] = request.client.host
         save_licenses(licenses)
-        return {"status": "success", "detail": "Token bound to device successfully"}
+        return {
+            "status": "success", 
+            "detail": "Token bound to device successfully",
+            "duration_days": license_data.get("duration_days"),
+            "expires_at": license_data.get("expires_at")
+        }
         
     # If already claimed, verify HWID
     if license_data["hwid"] != hwid:
@@ -496,7 +684,12 @@ def verify_license(req: LicenseVerifyRequest, request: Request):
     license_data["last_ip"] = request.client.host
     save_licenses(licenses)
     
-    return {"status": "success", "detail": "Token verified"}
+    return {
+        "status": "success", 
+        "detail": "Token verified",
+        "duration_days": license_data.get("duration_days"),
+        "expires_at": license_data.get("expires_at")
+    }
 
 @app.post("/api/license/generate")
 def generate_license(req: LicenseGenerateRequest):
@@ -685,6 +878,25 @@ def reset_hwid(req: dict):
 @app.get("/api/accounts")
 def list_accounts():
     return {"accounts": get_saved_sessions()}
+
+@app.get("/api/accounts/check/{session_name}")
+async def check_account_status(session_name: str):
+    session_path = os.path.join(ACCOUNTS_DIR, session_name)
+    if not os.path.exists(session_path + ".session"):
+        return {"status": "Error", "detail": "Not found"}
+    client = make_client(session_path)
+    try:
+        await client.connect()
+        is_auth = await client.is_user_authorized()
+        name = ""
+        if is_auth:
+            me = await client.get_me()
+            name = (me.first_name or "") + (" " + me.last_name if me.last_name else "")
+        return {"status": "Active" if is_auth else "Expired", "name": name.strip()}
+    except Exception as e:
+        return {"status": "Error", "detail": str(e)}
+    finally:
+        await client.disconnect()
 
 @app.post("/api/accounts/delete/{session_name}")
 def delete_account(session_name: str):
@@ -919,13 +1131,7 @@ async def scrape_group(req: ScrapeRequest):
     f_has_name       = req.filter_has_name
 
     session_path = os.path.join(ACCOUNTS_DIR, session_name)
-    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
-        device_model="iPhone 13 Pro Max",
-        system_version="15.5",
-        app_version="8.7.1",
-        lang_code="en",
-        system_lang_code="en"
-    )
+    client = make_client(session_path)
 
     try:
         await client.connect()
@@ -1141,11 +1347,18 @@ async def export_groups_csv(cache_id: str):
 
 @app.get("/api/logs")
 def get_logs():
-    return {"logs": LOG_BUFFER}
+    return {"logs": LOG_BUFFERS}
+
+class ClearLogsRequest(BaseModel):
+    task: Optional[str] = None
 
 @app.post("/api/logs/clear")
-def clear_logs():
-    LOG_BUFFER.clear()
+def clear_logs(req: ClearLogsRequest = None):
+    if req and req.task and req.task in LOG_BUFFERS:
+        LOG_BUFFERS[req.task].clear()
+    else:
+        for k in LOG_BUFFERS:
+            LOG_BUFFERS[k].clear()
     return {"status": "ok"}
 
 # ─────────────────────────────────────────────

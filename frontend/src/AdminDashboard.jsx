@@ -165,7 +165,7 @@ function AdminDashboard({ onBack }) {
 
     if (filterStatus === 'all') return matchesSearch;
     if (filterStatus === 'active') return matchesSearch && lic.bound;
-    if (filterStatus === 'unbound') return matchesSearch && !lic.bound;
+    if (filterStatus === 'unused') return matchesSearch && !lic.bound;
     if (filterStatus === 'expired') {
       if (!lic.expires_at || lic.expires_at === 'Never') return false;
       return matchesSearch && new Date(lic.expires_at) < new Date();
@@ -176,14 +176,14 @@ function AdminDashboard({ onBack }) {
   // Stats
   const totalKeys = licenses.length;
   const activeDevices = licenses.filter(l => l.bound).length;
-  const unboundKeys = licenses.filter(l => !l.bound).length;
+  const unusedKeys = licenses.filter(l => !l.bound).length;
   const expiredKeys = licenses.filter(l => {
     if (!l.expires_at || l.expires_at === 'Never') return false;
     return new Date(l.expires_at) < new Date();
   }).length;
 
   const getStatusInfo = (lic) => {
-    if (!lic.bound) return { label: 'Unbound', className: 'status-unbound' };
+    if (!lic.bound) return { label: 'Unused', className: 'status-unused' };
     if (lic.expires_at && lic.expires_at !== 'Never' && new Date(lic.expires_at) < new Date()) {
       return { label: 'Expired', className: 'status-expired' };
     }
@@ -217,8 +217,9 @@ function AdminDashboard({ onBack }) {
         <div className="admin-login-card">
           <div className="admin-login-header">
             <div className="admin-login-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 2L2 12L9 15L21 2Z"/>
+                <path d="M21 2L13 22L9 15L21 2Z"/>
               </svg>
             </div>
             <h1>Admin Panel</h1>
@@ -276,8 +277,9 @@ function AdminDashboard({ onBack }) {
       {/* Sidebar */}
       <aside className="admin-sidebar">
         <div className="admin-sidebar-logo">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 2L2 12L9 15L21 2Z"/>
+            <path d="M21 2L13 22L9 15L21 2Z"/>
           </svg>
           <span>Admin Panel</span>
         </div>
@@ -373,7 +375,7 @@ function AdminDashboard({ onBack }) {
                 </div>
               </div>
               <div className="admin-stat-card">
-                <div className="admin-stat-icon stat-unbound">
+                <div className="admin-stat-icon stat-unused">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="10"/>
                     <line x1="15" y1="9" x2="9" y2="15"/>
@@ -381,8 +383,8 @@ function AdminDashboard({ onBack }) {
                   </svg>
                 </div>
                 <div>
-                  <span className="admin-stat-value">{unboundKeys}</span>
-                  <span className="admin-stat-label">Unbound Keys</span>
+                  <span className="admin-stat-value">{unusedKeys}</span>
+                  <span className="admin-stat-label">Unused Keys</span>
                 </div>
               </div>
               <div className="admin-stat-card">
@@ -415,7 +417,7 @@ function AdminDashboard({ onBack }) {
                 />
               </div>
               <div className="admin-filters">
-                {['all', 'active', 'unbound', 'expired'].map(f => (
+                {['all', 'active', 'unused', 'expired'].map(f => (
                   <button
                     key={f}
                     className={`admin-filter-btn ${filterStatus === f ? 'active' : ''}`}
@@ -424,7 +426,7 @@ function AdminDashboard({ onBack }) {
                     {f.charAt(0).toUpperCase() + f.slice(1)}
                     {f === 'all' && <span className="admin-filter-count">{totalKeys}</span>}
                     {f === 'active' && <span className="admin-filter-count">{activeDevices}</span>}
-                    {f === 'unbound' && <span className="admin-filter-count">{unboundKeys}</span>}
+                    {f === 'unused' && <span className="admin-filter-count">{unusedKeys}</span>}
                     {f === 'expired' && <span className="admin-filter-count">{expiredKeys}</span>}
                   </button>
                 ))}
@@ -618,7 +620,7 @@ function AdminDashboard({ onBack }) {
                   </div>
                   <div className="settings-info-row">
                     <span className="settings-info-label">Admin Panel Version</span>
-                    <span className="settings-info-value">v2.0</span>
+                    <span className="settings-info-value">v1.0.1</span>
                   </div>
                 </div>
               </div>
