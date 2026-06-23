@@ -1038,7 +1038,7 @@ class App(ctk.CTk):
         self._set_status(self._update_status, "Pulling latest changes...", ok=False)
         self.update()
         try:
-            result = subprocess.run(["git", "pull"], capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
+            result = subprocess.run(["git", "pull", "--rebase", "--autostash"], capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
             if result.returncode == 0:
                 if "Already up to date." in result.stdout:
                     self._set_status(self._update_status, "You are already on the latest version!", ok=True)
