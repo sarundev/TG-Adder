@@ -28,13 +28,14 @@ jobs:
 
       - name: Build Executables with PyInstaller
         run: |
-          pyinstaller TelegramSuite.spec
+          pyinstaller TELE168.spec
           # If you also need the other ones, uncomment the following lines:
+          # pyinstaller TelegramSuite.spec
           # pyinstaller scrape_and_add.spec
           # pyinstaller telegram_login.spec
 
       - name: Upload Windows Executable
         uses: actions/upload-artifact@v4
         with:
-          name: TelegramSuite-Windows-EXE
+          name: TELE168-Windows-GUI-EXE
           path: dist/
