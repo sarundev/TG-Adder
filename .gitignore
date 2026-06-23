@@ -7,7 +7,7 @@ accounts/*.session-journal
 accounts/licenses.json
 .license_token
 build/
-dist/
+/dist/
 downloads/*
 !downloads/*.zip
 !downloads/*.dmg
