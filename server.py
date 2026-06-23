@@ -99,8 +99,9 @@ frontend_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 downloads_path = os.path.join(os.path.dirname(__file__), "downloads")
 os.makedirs(downloads_path, exist_ok=True)
 
-if os.path.exists(frontend_path):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
+assets_path = os.path.join(frontend_path, "assets")
+if os.path.exists(frontend_path) and os.path.exists(assets_path):
+    app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
     
 app.mount("/downloads", StaticFiles(directory=downloads_path), name="downloads")
 
