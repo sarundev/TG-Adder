@@ -2738,14 +2738,25 @@ async def support_chat(req: ChatRequest):
 if os.path.exists(FRONTEND_DIST):
     pass
     
+    import mimetypes
+    mimetypes.add_type('application/javascript', '.js')
+    mimetypes.add_type('text/css', '.css')
+    mimetypes.add_type('image/svg+xml', '.svg')
+
     @app.get("/{catchall:path}")
     def serve_frontend(catchall: str):
         if catchall.startswith("api/"):
             raise HTTPException(status_code=404, detail="API route not found")
-        index_path = os.path.join(FRONTEND_DIST, "index.html")
+            
         file_path = os.path.join(FRONTEND_DIST, catchall)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
+            
+        # If it's an asset request that wasn't found, return 404 instead of index.html
+        if catchall.startswith("assets/"):
+            raise HTTPException(status_code=404, detail="Asset not found")
+            
+        index_path = os.path.join(FRONTEND_DIST, "index.html")
         return FileResponse(index_path)
 
 
