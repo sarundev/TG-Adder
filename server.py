@@ -184,7 +184,32 @@ async def _media_download_task(req: MediaDownloadRequest):
             log_msg(f"❌ Account {req.account} is not authorized.")
             return
             
-        target_entity = await client.get_entity(req.target_chat)
+        target = req.target_chat
+        if target.lstrip('-').isdigit():
+            target = int(target)
+            
+        async def resolve_entity(t):
+            try:
+                return await client.get_entity(t)
+            except Exception:
+                if isinstance(t, int):
+                    raw_id = str(abs(t))
+                    if not raw_id.startswith('100'):
+                        try:
+                            return await client.get_entity(int(f"-100{raw_id}"))
+                        except Exception:
+                            pass
+                return None
+
+        target_entity = await resolve_entity(target)
+        if not target_entity:
+            # Fully cache dialogs to make sure we know about all private chats
+            async for _ in client.iter_dialogs():
+                pass
+            target_entity = await resolve_entity(target)
+            
+        if not target_entity:
+            raise ValueError(f"Could not resolve the group/channel. Make sure the account {req.account} is ACTUALLY a member of this private channel!")
         
         safe_name = req.target_chat.replace("/", "_").replace(":", "_").replace("https___t.me_", "")
         if req.save_path:

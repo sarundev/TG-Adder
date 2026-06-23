@@ -3,6 +3,7 @@ import time
 import requests
 import uvicorn
 import os
+import subprocess
 import uuid
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
@@ -164,6 +165,7 @@ class App(ctk.CTk):
             ("Media Download",   self.show_media_downloader),
             ("Auto Poster",      self.show_video_poster),
             ("Promote to Admin", self.show_promote_admin),
+            ("Update Tool",      self.show_updater),
         ]
 
         for name, func in nav:
@@ -1018,6 +1020,35 @@ class App(ctk.CTk):
             self._set_status(self._bot_status, r.get("message", "Bot clicker started."), ok=True)
         except Exception as e:
             self._set_status(self._bot_status, str(e), err=True)
+
+    # ═══════════════════════════════════════════
+    #   UPDATER
+    # ═══════════════════════════════════════════
+    def show_updater(self):
+        sf = self._scroll_frame()
+        self._page_title(sf, "Update the tool to get the newest features.")
+
+        card = self._section(sf, "SOFTWARE UPDATE")
+        ctk.CTkLabel(card, text="Click the button below to download the latest features and bug fixes.", font=("Courier", 14), text_color=C_TEXT2).pack(padx=24, pady=(20, 10), anchor="w")
+
+        self._update_status = self._status_lbl(sf)
+        self._btn_primary(sf, "Check & Update", self._run_update, pady=(20, 20))
+
+    def _run_update(self):
+        self._set_status(self._update_status, "Pulling latest changes...", ok=False)
+        self.update()
+        try:
+            result = subprocess.run(["git", "pull"], capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
+            if result.returncode == 0:
+                if "Already up to date." in result.stdout:
+                    self._set_status(self._update_status, "You are already on the latest version!", ok=True)
+                else:
+                    self._set_status(self._update_status, "Update successful! Please restart the application.", ok=True)
+                    messagebox.showinfo("Update Complete", "The tool has been updated successfully. Please close and restart the application.")
+            else:
+                self._set_status(self._update_status, f"Update failed: {result.stderr}", err=True)
+        except Exception as e:
+            self._set_status(self._update_status, f"Error: {e}", err=True)
 
     # ═══════════════════════════════════════════
     #   MEDIA DOWNLOADER
