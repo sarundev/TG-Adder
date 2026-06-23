@@ -12,3 +12,4 @@ downloads/*
 !downloads/*.zip
 !downloads/*.dmg
 *.app
+.env
