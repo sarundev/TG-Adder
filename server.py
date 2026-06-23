@@ -95,7 +95,13 @@ app = FastAPI(title="Telegram Suite API", lifespan=lifespan)
 
 import os
 # Mount frontend dist if exists
-frontend_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+import sys
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+frontend_path = os.path.join(base_path, "frontend", "dist")
 downloads_path = os.path.join(os.path.dirname(__file__), "downloads")
 os.makedirs(downloads_path, exist_ok=True)
 

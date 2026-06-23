@@ -9,6 +9,7 @@ datas = []
 datas += copy_metadata('google-generativeai')
 datas += copy_metadata('google-ai-generativelanguage')
 datas += copy_metadata('google-api-core')
+datas += [('frontend/dist', 'frontend/dist')]
 
 binaries = []
 hiddenimports = ['rich', 'questionary', 'telethon', 'google', 'google.generativeai', 'google.ai.generativelanguage', 'pydantic', 'fastapi', 'starlette', 'python-multipart', 'multipart', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'uvicorn.lifespan.off']
