@@ -23,7 +23,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install fastapi uvicorn requests customtkinter pyTelegramBotAPI telethon opentele rich questionary pyinstaller python-multipart
+        pip install -r requirements.txt
+        pip install pyinstaller
 
     - name: Build with PyInstaller
       run: |
