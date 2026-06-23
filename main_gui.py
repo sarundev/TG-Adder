@@ -21,7 +21,7 @@ ctk.CTkOptionMenu.destroy = _safe_opt_destroy
 # ------------------------------------------------
 
 API_BASE         = "http://127.0.0.1:8000/api"
-LICENSE_API_BASE = "http://127.0.0.1:8000/api"
+LICENSE_API_BASE = "https://web-production-89e12.up.railway.app/api"
 
 # ═══════════════════════════════════════════
 #   DESIGN TOKENS  —  Advanced Tech Tool
