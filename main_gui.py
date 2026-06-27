@@ -160,6 +160,7 @@ class App(ctk.CTk):
             ("Join Group",       self.show_join),
             ("Data Scraper",     self.show_scraper),
             ("Group to Group",   self.show_group_inviter),
+            ("Create Group",     self.show_create_group),
             ("Account Warmup",   self.show_warmup),
             ("Bot Starter",      self.show_bot_starter),
             ("Media Download",   self.show_media_downloader),
@@ -698,7 +699,24 @@ class App(ctk.CTk):
             td_card, text="Browse & Import TData (.zip)", command=self._upload_tdata,
             font=("Courier", 14, "bold"), height=32, corner_radius=4,
             fg_color=C_SURFACE2, hover_color=C_BORDER, text_color=C_TEXT, border_width=1, border_color=C_BORDER
-        ).pack(fill="x", padx=24, pady=24)
+        ).pack(fill="x", padx=24, pady=(16, 8))
+
+        session_card = self._section(sf, "IMPORT SESSION")
+        btn_row = ctk.CTkFrame(session_card, fg_color="transparent")
+        btn_row.pack(fill="x", padx=24, pady=24)
+        btn_row.grid_columnconfigure((0, 1), weight=1)
+
+        ctk.CTkButton(
+            btn_row, text="Import File (.session/.json)", command=self._upload_session,
+            font=("Courier", 13, "bold"), height=32, corner_radius=4,
+            fg_color=C_SURFACE2, hover_color=C_BORDER, text_color=C_TEXT, border_width=1, border_color=C_BORDER
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        
+        ctk.CTkButton(
+            btn_row, text="Import Folder", command=self._upload_session_folder,
+            font=("Courier", 13, "bold"), height=32, corner_radius=4,
+            fg_color=C_SURFACE2, hover_color=C_BORDER, text_color=C_TEXT, border_width=1, border_color=C_BORDER
+        ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
         self._login_status = self._status_lbl(sf)
         self._pad(sf, 20)
@@ -711,6 +729,68 @@ class App(ctk.CTk):
             try:
                 with open(path, "rb") as f:
                     r = requests.post(f"{API_BASE}/accounts/upload-tdata-zip", files={"file": f})
+                if r.status_code == 200:
+                    ph = r.json().get("phone")
+                    self.after(0, lambda: self._set_status(self._login_status, f"Account +{ph} added.", ok=True))
+                else:
+                    self.after(0, lambda: self._set_status(self._login_status, r.text, err=True))
+            except Exception as e:
+                self.after(0, lambda: self._set_status(self._login_status, str(e), err=True))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _upload_session(self):
+        path = filedialog.askopenfilename(parent=self, filetypes=[("Session or JSON", "*.session *.json"), ("All Files", "*.*")], title="Select Telethon Session or JSON")
+        if not path: return
+        self._set_status(self._login_status, "Importing session...")
+        def task():
+            try:
+                upload_path = path
+                if path.endswith('.json'):
+                    import json, os
+                    with open(path, 'r') as jf:
+                        data = json.load(jf)
+                    session_name = data.get("session_file", "")
+                    if not session_name.endswith(".session"):
+                        session_name += ".session"
+                    upload_path = os.path.join(os.path.dirname(path), session_name)
+                    if not os.path.exists(upload_path):
+                        self.after(0, lambda: self._set_status(self._login_status, "Matching .session file not found.", err=True))
+                        return
+
+                with open(upload_path, "rb") as f:
+                    r = requests.post(f"{API_BASE}/accounts/upload-session", files={"file": f})
+                if r.status_code == 200:
+                    ph = r.json().get("phone")
+                    self.after(0, lambda: self._set_status(self._login_status, f"Account +{ph} added.", ok=True))
+                else:
+                    self.after(0, lambda: self._set_status(self._login_status, r.text, err=True))
+            except Exception as e:
+                self.after(0, lambda: self._set_status(self._login_status, str(e), err=True))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _upload_session_folder(self):
+        folder_path = filedialog.askdirectory(parent=self, title="Select Folder Containing Session")
+        if not folder_path: return
+        self._set_status(self._login_status, "Scanning folder for session...")
+        def task():
+            import os
+            upload_path = None
+            for root, _, files in os.walk(folder_path):
+                for f in files:
+                    if f.endswith('.session'):
+                        upload_path = os.path.join(root, f)
+                        break
+                if upload_path:
+                    break
+            
+            if not upload_path:
+                self.after(0, lambda: self._set_status(self._login_status, "No .session file found in folder.", err=True))
+                return
+                
+            try:
+                self.after(0, lambda: self._set_status(self._login_status, f"Found {os.path.basename(upload_path)}. Importing..."))
+                with open(upload_path, "rb") as f:
+                    r = requests.post(f"{API_BASE}/accounts/upload-session", files={"file": f})
                 if r.status_code == 200:
                     ph = r.json().get("phone")
                     self.after(0, lambda: self._set_status(self._login_status, f"Account +{ph} added.", ok=True))
@@ -811,10 +891,86 @@ class App(ctk.CTk):
 
     def _stop_inviter(self):
         try:
-            requests.post(f"{API_BASE}/inviter/stop")
-            self._set_status(self._inv_status, "Stop signal sent.", ok=True)
+            requests.post(f"{API_BASE}/invite/stop")
+            self._set_status(self._inv_status, "Sent stop signal.", ok=True)
+        except:
+            pass
+
+    # ═══════════════════════════════════════════
+    #   CREATE GROUP
+    # ═══════════════════════════════════════════
+    def show_create_group(self):
+        sf = self._scroll_frame()
+        self._page_title(sf, "Create multiple groups automatically.")
+
+        self._cg_acc_vars = {}
+        self._account_picker(sf, self._cg_acc_vars)
+
+        cfg = self._section(sf, "GROUP SETTINGS")
+        self._cg_name = self._field(cfg, "Group Base Name", "e.g. My Premium Group")
+        self._cg_count = self._field(cfg, "Number of Groups to Create", "e.g. 5", default="1")
+        self._cg_delay = self._field(cfg, "Delay Between Creations (seconds)", "10", default="5")
+        self._pad(cfg, 20)
+
+        btn_row = ctk.CTkFrame(sf, fg_color="transparent")
+        btn_row.pack(fill="x", padx=40, pady=(24, 0))
+        btn_row.grid_columnconfigure((0, 1), weight=1)
+
+        ctk.CTkButton(btn_row, text="Start Creating", command=self._start_create_group,
+                      font=("Courier", 14, "bold"), fg_color=C_CYAN, hover_color=C_CYAN_HOVER, text_color=C_BG, height=36, corner_radius=4
+                      ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Stop All", command=self._stop_create_group,
+                      font=("Courier", 14, "bold"), fg_color=C_RED_DIM, hover_color="#3A1010", text_color=C_RED, height=36, corner_radius=4,
+                      border_width=1, border_color="#5A1515"
+                      ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        self._cg_status = self._status_lbl(sf)
+        self._pad(sf, 30)
+
+    def _start_create_group(self):
+        if not self.accounts: messagebox.showerror("Error", "No accounts available."); return
+        accs = [k for k, v in self._cg_acc_vars.items() if v.get()]
+        if not accs:
+            self._set_status(self._cg_status, "Please select at least one account.", err=True)
+            return
+            
+        grp_name = self._cg_name.get().strip()
+        if not grp_name:
+            self._set_status(self._cg_status, "Please provide a group name.", err=True)
+            return
+            
+        try:
+            count = int(self._cg_count.get().strip())
+        except:
+            self._set_status(self._cg_status, "Invalid number of groups.", err=True)
+            return
+            
+        try:
+            delay = int(self._cg_delay.get().strip())
+        except:
+            delay = 5
+
+        self._set_status(self._cg_status, "Starting Group Creator...")
+        try:
+            r = requests.post(f"{API_BASE}/group/create-multi", json={
+                "accounts": accs,
+                "group_name": grp_name,
+                "number_of_groups": count,
+                "delay_sec": delay
+            })
+            if r.status_code == 200:
+                self._set_status(self._cg_status, "Group Creator task started! Check Terminal Logs.", ok=True)
+            else:
+                self._set_status(self._cg_status, f"Error: {r.text}", err=True)
         except Exception as e:
-            self._set_status(self._inv_status, str(e), err=True)
+            self._set_status(self._cg_status, f"Connection Error: {e}", err=True)
+
+    def _stop_create_group(self):
+        try:
+            requests.post(f"{API_BASE}/group/create-multi/stop")
+            self._set_status(self._cg_status, "Sent stop signal.", ok=True)
+        except:
+            pass
 
     # ═══════════════════════════════════════════
     #   JOIN GROUP

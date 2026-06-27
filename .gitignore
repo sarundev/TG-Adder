@@ -13,3 +13,6 @@ downloads/*
 !downloads/*.dmg
 *.app
 .env
+
+*.session
+*.session-journal

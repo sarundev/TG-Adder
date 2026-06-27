@@ -3,13 +3,20 @@ import './index.css';
 import AdminDashboard from './AdminDashboard';
 import ChatWidget from './ChatWidget';
 
+import WebTool from './WebTool';
+
 function App() {
-  const [page, setPage] = useState(window.location.hash === '#admin' ? 'admin' : 'home');
+  const getPage = () => {
+    if (window.location.hash === '#admin') return 'admin';
+    if (window.location.hash === '#web') return 'web';
+    return 'home';
+  };
+  const [page, setPage] = useState(getPage());
   const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     const onHashChange = () => {
-      setPage(window.location.hash === '#admin' ? 'admin' : 'home');
+      setPage(getPage());
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
@@ -17,6 +24,9 @@ function App() {
 
   if (page === 'admin') {
     return <AdminDashboard onBack={() => { window.location.hash = ''; setPage('home'); }} />;
+  }
+  if (page === 'web') {
+    return <WebTool onBack={() => { window.location.hash = ''; setPage('home'); }} />;
   }
 
   const handleBuyAccount = async (accountType) => {
@@ -206,8 +216,8 @@ function App() {
             </svg>
             Live Support
           </a>
-          <a href="#features" className="btn btn-secondary" style={{ padding: '0.5rem 1.125rem', fontSize: '0.875rem' }}>
-            Documentation
+          <a href="#web" className="btn btn-secondary" style={{ padding: '0.5rem 1.125rem', fontSize: '0.875rem', marginLeft: '0.5rem' }}>
+            Open Web Tool
           </a>
         </div>
       </nav>
@@ -220,16 +230,14 @@ function App() {
           The ultimate desktop client built for professionals. Automate, scrape, and manage your Telegram groups and channels — securely, at scale.
         </p>
         <div className="btn-group">
-          <a href="/downloads/TELE168_Windows.zip" className="btn btn-primary" id="download-btn">
+          <a href="#web" className="btn btn-primary" id="web-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-              <line x1="8" y1="21" x2="16" y2="21"/>
-              <line x1="12" y1="17" x2="12" y2="21"/>
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line>
             </svg>
-            Download for Windows
+            Launch Web Tool
           </a>
-          <a href="#features" className="btn btn-secondary">
-            View Features
+          <a href="/downloads/TELE168_Windows.zip" className="btn btn-secondary" id="download-btn">
+            Download for Windows
           </a>
         </div>
       </main>

@@ -172,6 +172,13 @@ class PromoteAdminRequest(BaseModel):
     accounts_to_promote: list[str]
     delay_sec: int = 2
 
+class CreateGroupRequest(BaseModel):
+    accounts: list[str]
+    group_name: str
+    number_of_groups: int
+    delay_sec: int = 5
+
+
 async def _media_download_task(req: MediaDownloadRequest):
     global LOG_BUFFER
     log_msg(f"📥 Starting Video Downloader on {req.target_chat} using {req.account}...")
@@ -261,6 +268,7 @@ async def start_media_download(req: MediaDownloadRequest, background_tasks: Back
 async def _auto_post_task(req: VideoPostRequest):
     global LOG_BUFFER, GLOBAL_CANCEL_FLAGS
     GLOBAL_CANCEL_FLAGS["auto_post"] = False
+    log_msg(f"\n==========================================")
     log_msg(f"🎬 Starting Auto Video Poster to {req.target_chat}...")
     
     if not os.path.exists(req.folder_path):
@@ -316,7 +324,11 @@ async def _auto_post_task(req: VideoPostRequest):
         log_msg(f"❌ Critical error in auto poster: {str(e)}")
     finally:
         for c in clients:
-            await c.disconnect()
+            try:
+                await c.disconnect()
+            except:
+                pass
+        log_msg(f"==========================================\n")
 
 @app.post("/api/media/auto-post")
 async def start_auto_post(req: VideoPostRequest, background_tasks: BackgroundTasks):
@@ -407,6 +419,71 @@ async def start_promote_admin(req: PromoteAdminRequest, background_tasks: Backgr
     background_tasks.add_task(_promote_admin_task, req)
     return {"status": "success", "message": f"Started promoting {len(req.accounts_to_promote)} accounts in {req.target_chat}..."}
 
+async def _create_group_task(req: CreateGroupRequest):
+    global LOG_BUFFER, GLOBAL_CANCEL_FLAGS
+    GLOBAL_CANCEL_FLAGS["create_group"] = False
+    log_msg(f"🏗️ Starting Group Creator for {len(req.accounts)} accounts...")
+    
+    try:
+        for acc in req.accounts:
+            if GLOBAL_CANCEL_FLAGS.get("create_group", False):
+                log_msg("🛑 Group Creator stopped by user.")
+                break
+                
+            client = make_client(os.path.join(ACCOUNTS_DIR, acc))
+            await client.connect()
+            if not await client.is_user_authorized():
+                log_msg(f"❌ Account {acc} is unauthorized!")
+                await client.disconnect()
+                continue
+                
+            log_msg(f"⚙️ Account {acc} will create {req.number_of_groups} group(s)...")
+            
+            for i in range(req.number_of_groups):
+                if GLOBAL_CANCEL_FLAGS.get("create_group", False):
+                    break
+                    
+                group_title = f"{req.group_name} {i+1}" if req.number_of_groups > 1 else req.group_name
+                try:
+                    result = await client(functions.channels.CreateChannelRequest(
+                        title=group_title,
+                        about="",
+                        megagroup=True
+                    ))
+                    created_chat = result.chats[0]
+                    log_msg(f"✅ [{acc}] Created group: {created_chat.title} (ID: {created_chat.id})")
+                except FloodWaitError as e:
+                    log_msg(f"⚠️ [{acc}] Rate limited! Sleeping for {e.seconds}s...")
+                    await asyncio.sleep(e.seconds)
+                except Exception as e:
+                    log_msg(f"❌ [{acc}] Failed to create group {group_title}: {str(e)}")
+                    
+                if i < req.number_of_groups - 1:
+                    await asyncio.sleep(req.delay_sec)
+                    
+            await client.disconnect()
+            
+        log_msg("🎉 Group Creator finished!")
+    except Exception as e:
+        log_msg(f"❌ Critical error in group creator: {str(e)}")
+
+@app.post("/api/group/create-multi")
+async def start_create_groups(req: CreateGroupRequest, background_tasks: BackgroundTasks):
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="Select at least one account")
+    if not req.group_name:
+        raise HTTPException(status_code=400, detail="Group name is required")
+    if req.number_of_groups < 1:
+        raise HTTPException(status_code=400, detail="Number of groups must be at least 1")
+        
+    background_tasks.add_task(_create_group_task, req)
+    return {"status": "success", "message": f"Started creating {req.number_of_groups} groups per account..."}
+
+@app.post("/api/group/create-multi/stop")
+def stop_create_group():
+    GLOBAL_CANCEL_FLAGS["create_group"] = True
+    return {"status": "success", "message": "Stopping group creator..."}
+
 @app.get("/")
 def serve_frontend():
     if os.path.exists(frontend_path):
@@ -423,8 +500,8 @@ app.add_middleware(
 )
 
 # ── Configuration ──
-API_ID = 36597503
-API_HASH = "ce9a6d0c68789ae5234b77aa081acfac"
+API_ID = os.getenv("API_ID", "2040")
+API_HASH = os.getenv("API_HASH", "b18441a1ff607e10a989891a5462e627")
 import platform
 
 ACCOUNTS_DIR = "accounts"
@@ -433,7 +510,8 @@ LOG_FILE = "logs.txt"
 # ── Global Cancellation Flags ──
 GLOBAL_CANCEL_FLAGS = {
     "inviter": False,
-    "auto_post": False
+    "auto_post": False,
+    "create_group": False
 }
 
 try:
@@ -449,8 +527,11 @@ except PermissionError:
     ACCOUNTS_DIR = os.path.join(base_dir, "accounts")
     LOG_FILE = os.path.join(base_dir, "logs.txt")
     os.makedirs(ACCOUNTS_DIR, exist_ok=True)
-# Global states
+# Background active clients
+import uuid
 PENDING_CLIENTS = {}
+PENDING_QR_CLIENTS = {}
+# Global states
 LOG_BUFFERS = {"System": []}
 import sys
 SCRAPED_MEMBERS_CACHE = {}
@@ -489,6 +570,8 @@ def log_msg(msg: str):
         elif name == "scrape_group": task = "Data Scraper"; break
         elif name == "warm_account_worker": task = "Account Warmer"; break
         elif name == "join_group_worker": task = "Mass Joiner"; break
+        elif name == "_create_group_task": task = "Group Creator"; break
+        elif name == "text_auto_post_worker": task = "Text Poster"; break
         f = f.f_back
 
     if task not in LOG_BUFFERS:
@@ -556,6 +639,7 @@ def _load_licenses():
 # --- Pydantic Models ---
 class LoginRequest(BaseModel):
     phone: str
+    web_username: Optional[str] = None
 
 class LicenseRequest(BaseModel):
     key: str
@@ -563,6 +647,14 @@ class LicenseRequest(BaseModel):
 class LoginConfirm(BaseModel):
     phone: str
     code: str
+    password: Optional[str] = None
+    web_username: Optional[str] = None
+
+class LoginQRRequest(BaseModel):
+    web_username: str
+
+class LoginQRCheck(BaseModel):
+    uuid: str
     password: Optional[str] = None
 
 class ScrapeRequest(BaseModel):
@@ -597,6 +689,12 @@ class InviteByUsernameRequest(BaseModel):
     accounts: List[str]
     target_group: str
     usernames: List[str]
+    delay: float
+
+class AutoPostRequest(BaseModel):
+    accounts: List[str]
+    targets: List[str]
+    message: str
     delay: float
 
 class ApproverRequest(BaseModel):
@@ -639,6 +737,11 @@ class LicenseVerifyRequest(BaseModel):
     hwid: str
     computer_model: str = None
 
+class WebLoginRequest(BaseModel):
+    username: str
+    password: str
+    license_key: str
+
 class LicenseGenerateRequest(BaseModel):
     admin_key: str
     prefix: str = "TLG"
@@ -646,9 +749,16 @@ class LicenseGenerateRequest(BaseModel):
 
 # --- Endpoints ---
 
+try:
+    from database import engine, db_load_licenses, db_save_licenses, db_load_web_users, db_save_web_users, db_add_telegram_account, db_get_user_accounts
+except ImportError:
+    engine = None
+
 LICENSE_FILE = os.path.join(ACCOUNTS_DIR, "licenses.json")
 
 def load_licenses():
+    if engine:
+        return db_load_licenses()
     if not os.path.exists(LICENSE_FILE):
         return {}
     try:
@@ -658,8 +768,104 @@ def load_licenses():
         return {}
 
 def save_licenses(data):
+    if engine:
+        db_save_licenses(data)
+        return
     with open(LICENSE_FILE, "w") as f:
         json.dump(data, f, indent=4)
+
+WEB_USERS_FILE = os.path.join(ACCOUNTS_DIR, "web_users.json")
+
+def load_web_users():
+    if engine:
+        return db_load_web_users()
+    if not os.path.exists(WEB_USERS_FILE):
+        return {}
+    try:
+        with open(WEB_USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_web_users(data):
+    if engine:
+        db_save_web_users(data)
+        return
+    with open(WEB_USERS_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+@app.post("/api/web/login")
+def web_login(req: WebLoginRequest, request: Request):
+    users = load_web_users()
+    username = req.username.strip()
+    
+    if username not in users:
+        raise HTTPException(status_code=401, detail="User not found. Please register first.")
+        
+    if users[username]["password"] != req.password:
+        raise HTTPException(status_code=401, detail="Incorrect password")
+        
+    # Verify License (since they might have entered a new one or we need to validate their current one)
+    licenses = load_licenses()
+    token = req.license_key.strip()
+    if token not in licenses:
+        raise HTTPException(status_code=401, detail="Invalid license key")
+        
+    lic = licenses[token]
+    if lic.get("expires_at") and lic["expires_at"] != "Never":
+        try:
+            exp = datetime.fromisoformat(lic["expires_at"])
+            if exp < datetime.now(timezone.utc):
+                raise HTTPException(status_code=401, detail="License has expired")
+        except:
+            pass
+
+    # Update license if it changed and is valid
+    if users[username]["license_key"] != token:
+        users[username]["license_key"] = token
+        save_web_users(users)
+
+    return {"status": "success", "message": "Login successful"}
+
+@app.post("/api/web/register")
+def web_register(req: WebLoginRequest, request: Request):
+    users = load_web_users()
+    username = req.username.strip()
+    
+    if username in users:
+        raise HTTPException(status_code=400, detail="Username already exists")
+        
+    # Verify License
+    licenses = load_licenses()
+    token = req.license_key.strip()
+    if token not in licenses:
+        raise HTTPException(status_code=401, detail="Invalid license key")
+        
+    lic = licenses[token]
+    if lic.get("expires_at") and lic["expires_at"] != "Never":
+        try:
+            exp = datetime.fromisoformat(lic["expires_at"])
+            if exp < datetime.now(timezone.utc):
+                raise HTTPException(status_code=401, detail="License has expired")
+        except:
+            pass
+
+    # Register new user
+    users[username] = {
+        "password": req.password,
+        "license_key": token,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    save_web_users(users)
+
+    return {"status": "success", "message": "Registration successful"}
+
+@app.get("/api/web/user/accounts")
+def get_user_accounts(username: str):
+    if not engine:
+        return {"status": "error", "detail": "Database not configured"}
+    accounts = db_get_user_accounts(username)
+    return {"status": "success", "accounts": accounts}
 
 @app.post("/api/license/verify")
 def verify_license(req: LicenseVerifyRequest, request: Request):
@@ -943,6 +1149,37 @@ def delete_account(session_name: str):
         os.remove(journal_path)
     return {"status": "ok"}
 
+@app.post("/api/accounts/upload-session")
+async def upload_session_file(file: UploadFile = File(...)):
+    if not file.filename.endswith('.session'):
+        raise HTTPException(status_code=400, detail="Must be a .session file")
+        
+    session_name = file.filename
+    target_path = os.path.join(ACCOUNTS_DIR, session_name)
+    
+    with open(target_path, "wb") as f:
+        f.write(await file.read())
+        
+    try:
+        # Check if it's a valid SQLite DB first
+        import sqlite3
+        conn = sqlite3.connect(target_path)
+        conn.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        conn.close()
+        
+        c = make_client(target_path.replace(".session", ""))
+        await c.connect()
+        is_auth = await c.is_user_authorized()
+        await c.disconnect()
+        if not is_auth:
+            os.remove(target_path)
+            raise HTTPException(status_code=400, detail="Session is not authorized")
+        return {"status": "ok", "phone": session_name.replace(".session", "")}
+    except Exception as e:
+        if os.path.exists(target_path):
+            os.remove(target_path)
+        raise HTTPException(status_code=400, detail=f"Invalid session: {str(e)}")
+
 @app.post("/api/accounts/upload-tdata-zip")
 async def upload_tdata_zip(file: UploadFile = File(...)):
     if not OPENTELE_AVAILABLE:
@@ -1014,6 +1251,13 @@ async def login_request(req: LoginRequest):
     session_filename = phone.replace("+", "").replace(" ", "_")
     session_path = os.path.join(ACCOUNTS_DIR, session_filename)
     
+    if phone in PENDING_CLIENTS:
+        try:
+            await PENDING_CLIENTS[phone].disconnect()
+        except:
+            pass
+        PENDING_CLIENTS.pop(phone, None)
+        
     client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
         device_model="iPhone 13 Pro Max",
         system_version="15.5",
@@ -1025,6 +1269,8 @@ async def login_request(req: LoginRequest):
     
     try:
         if await client.is_user_authorized():
+            if req.web_username and engine:
+                db_add_telegram_account(phone, session_filename, req.web_username)
             await client.disconnect()
             return {"status": "authorized", "detail": "Already logged in"}
             
@@ -1063,6 +1309,83 @@ async def login_confirm(req: LoginConfirm):
         PENDING_CLIENTS.pop(phone)
         await client.disconnect()
         
+        if req.web_username and engine:
+            session_filename = phone.replace("+", "").replace(" ", "_")
+            db_add_telegram_account(phone, session_filename, req.web_username)
+        
+        return {"status": "success", "user": name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/accounts/login/qr/request")
+async def login_qr_request(req: LoginQRRequest):
+    request_id = str(uuid.uuid4())
+    session_filename = f"qr_{request_id}"
+    session_path = os.path.join(ACCOUNTS_DIR, session_filename)
+    
+    client = TelegramClient(session_path, api_id=API_ID, api_hash=API_HASH,
+        device_model="Desktop",
+        system_version="Windows 10",
+        app_version="4.2.4",
+        lang_code="en",
+        system_lang_code="en"
+    )
+    await client.connect()
+    
+    try:
+        qr = await client.qr_login()
+        PENDING_QR_CLIENTS[request_id] = {
+            "client": client,
+            "qr": qr,
+            "web_username": req.web_username,
+            "session_filename": session_filename
+        }
+        return {"status": "success", "uuid": request_id, "url": qr.url}
+    except Exception as e:
+        await client.disconnect()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/accounts/login/qr/check")
+async def login_qr_check(req: LoginQRCheck):
+    if req.uuid not in PENDING_QR_CLIENTS:
+        raise HTTPException(status_code=404, detail="QR session not found or expired")
+        
+    data = PENDING_QR_CLIENTS[req.uuid]
+    client = data["client"]
+    qr = data["qr"]
+    
+    try:
+        try:
+            # wait up to 2 seconds to see if they scanned
+            await asyncio.wait_for(qr.wait(), timeout=2.0)
+        except asyncio.TimeoutError:
+            return {"status": "pending"}
+        except SessionPasswordNeededError:
+            if not req.password:
+                return {"status": "password_required"}
+            await client.sign_in(password=req.password)
+            
+        user = await client.get_me()
+        name = f"{user.first_name} {user.last_name or ''}".strip()
+        phone = f"+{user.phone}" if user.phone else f"unknown_{req.uuid[:8]}"
+        
+        # rename session file to match phone if possible
+        import shutil
+        old_path = os.path.join(ACCOUNTS_DIR, data["session_filename"])
+        new_filename = phone.replace("+", "").replace(" ", "_") + ".session"
+        new_path = os.path.join(ACCOUNTS_DIR, new_filename)
+        
+        if os.path.exists(old_path + ".session"):
+            if os.path.exists(new_path):
+                os.remove(new_path)
+            shutil.move(old_path + ".session", new_path)
+        
+        PENDING_QR_CLIENTS.pop(req.uuid)
+        await client.disconnect()
+        
+        if data["web_username"] and engine:
+            db_add_telegram_account(phone, new_filename.replace(".session", ""), data["web_username"])
+            
         return {"status": "success", "user": name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1396,6 +1719,28 @@ def clear_logs(req: ClearLogsRequest = None):
             LOG_BUFFERS[k].clear()
     return {"status": "ok"}
 
+@app.get("/api/utils/browse-folder")
+def browse_folder():
+    try:
+        import subprocess
+        # macOS native folder picker using AppleScript. 
+        # tell application "System Events" to activate brings the dialog to the front!
+        script = '''
+        tell application "System Events"
+            activate
+        end tell
+        set folderPath to POSIX path of (choose folder with prompt "Select Video Folder:")
+        return folderPath
+        '''
+        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+        if result.returncode == 0:
+            folder = result.stdout.strip()
+            return {"folder": folder}
+        else:
+            return {"folder": ""} # User likely pressed Cancel
+    except Exception as e:
+        return {"folder": "", "error": str(e)}
+
 # ─────────────────────────────────────────────
 #  ACCOUNT PRE-SCREENING — checks if an account
 #  can actually add members to the target group
@@ -1633,6 +1978,7 @@ async def add_single_user(client, target_entity, user_or_id, session_name):
                     pass
 
             # ── Step 3: Pre-flight — skip if only invite link would be sent ───
+            # Restored to prevent sending invite links via PM
             if await _would_send_invite_only(client, user_entity, session_name, user_label):
                 log_msg(
                     f"   ⏭️ [{session_name}] Skipped {user_label} — their privacy only allows "
@@ -2765,6 +3111,76 @@ async def support_chat(req: ChatRequest):
         err_msg = traceback.format_exc()
         log_msg(f"Gemini API Error: {err_msg}")
         return {"status": "error", "detail": f"AI Error: {str(e)}"}
+
+# ─────────────────────────────────────────────
+# TEXT AUTO POSTER TOOL
+# ─────────────────────────────────────────────
+
+class AutoPostRequest(BaseModel):
+    accounts: List[str]
+    targets: List[str]
+    message: str
+    delay: float
+
+async def text_auto_post_worker(accounts: List[str], targets: List[str], message: str, delay: float):
+    log_msg(f"\n==========================================")
+    log_msg(f"🚀 TEXT AUTO POSTER STARTED")
+    log_msg(f"Accounts: {len(accounts)} | Targets: {len(targets)} | Delay: {delay}s")
+    log_msg(f"==========================================")
+    
+    GLOBAL_CANCEL_FLAGS["poster"] = False
+    
+    import itertools
+    account_cycle = itertools.cycle(accounts)
+    
+    for idx, target in enumerate(targets):
+        if GLOBAL_CANCEL_FLAGS.get("poster"):
+            log_msg("🛑 Auto Poster stopped manually.")
+            break
+            
+        session = next(account_cycle)
+        session_path = os.path.join(ACCOUNTS_DIR, session)
+        client = make_client(session_path)
+        
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                log_msg(f"❌ [{session}] Unauthorized. Skipping.")
+                continue
+                
+            target_id = parse_identifier(target)
+            log_msg(f"🔄 [{session}] Sending message to {target}...")
+            
+            try:
+                entity = await client.get_entity(target_id)
+                await client.send_message(entity, message)
+                log_msg(f"✅ [{session}] Message posted to {target}")
+            except Exception as e:
+                log_msg(f"❌ [{session}] Failed to post to {target}: {str(e)}")
+            
+            if idx < len(targets) - 1:
+                if not await safe_sleep(delay, "poster"):
+                    break
+                    
+        except Exception as e:
+            log_msg(f"❌ [{session}] Connection error: {str(e)}")
+        finally:
+            await client.disconnect()
+            
+    log_msg(f"==========================================\n")
+    log_msg(f"🎉 TEXT AUTO POSTER COMPLETED")
+
+@app.post("/api/poster/post")
+async def start_text_auto_poster(req: AutoPostRequest, background_tasks: BackgroundTasks):
+    if not req.accounts:
+        raise HTTPException(status_code=400, detail="No accounts specified")
+    if not req.targets:
+        raise HTTPException(status_code=400, detail="No targets specified")
+    if not req.message:
+        raise HTTPException(status_code=400, detail="Message is empty")
+        
+    background_tasks.add_task(run_worker_safe, text_auto_post_worker, req.accounts, req.targets, req.message, req.delay)
+    return {"status": "started"}
 
 if os.path.exists(FRONTEND_DIST):
     pass
