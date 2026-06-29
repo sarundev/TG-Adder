@@ -1,0 +1,47 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ── Virtual environments ─────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Environment & secrets ────────────────────────────────────────────────────
+.env
+.env.*
+*.key
+*.pem
+
+# ── Telegram session files ───────────────────────────────────────────────────
+*.session
+*.session-journal
+accounts/*.session
+accounts/*.session-journal
+accounts/licenses.json
+
+# ── Build artefacts ──────────────────────────────────────────────────────────
+build/
+dist/
+*.spec
+*.app
+
+# ── Downloads (keep zips / dmgs) ─────────────────────────────────────────────
+downloads/*
+!downloads/*.zip
+!downloads/*.dmg
+
+# ── Logs & temp files ────────────────────────────────────────────────────────
+*.log
+temp_logs.txt
+error.log
+text
+
+# ── License tokens ───────────────────────────────────────────────────────────
+.license_token
+.license_token_backup

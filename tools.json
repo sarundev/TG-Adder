@@ -1,0 +1,26 @@
+[
+    {
+        "name": "System Info",
+        "category": "System",
+        "command": "uname -a",
+        "description": "Prints basic system information and operating system details."
+    },
+    {
+        "name": "Ping Google",
+        "category": "Network",
+        "command": "ping -c 3 google.com",
+        "description": "Pings google.com 3 times to test network connectivity."
+    },
+    {
+        "name": "Python Version",
+        "category": "Development",
+        "command": "python3 --version",
+        "description": "Checks the default python3 version installed on the system."
+    },
+    {
+        "name": "List Directory Files",
+        "category": "Utilities",
+        "command": "ls -la",
+        "description": "Lists all files in the current working directory in detail."
+    }
+]

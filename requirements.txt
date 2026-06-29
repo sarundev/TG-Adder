@@ -1,0 +1,35 @@
+# ── Web framework ────────────────────────────────────────────────────────────
+fastapi==0.136.3
+uvicorn==0.49.0
+starlette==1.2.1
+python-multipart==0.0.32
+pydantic==2.13.4
+pydantic_core==2.46.4
+
+# ── Database ─────────────────────────────────────────────────────────────────
+SQLAlchemy==2.0.41
+psycopg2-binary==2.9.10
+
+# ── Telegram ─────────────────────────────────────────────────────────────────
+Telethon==1.43.2
+opentele==1.15.1
+pyTelegramBotAPI==4.34.0
+
+# ── HTTP / async ─────────────────────────────────────────────────────────────
+aiohttp==3.14.1
+requests==2.34.2
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv
+google-generativeai
+bakong-khqr==0.6.0
+
+# ── Cryptography (Telethon deps) ─────────────────────────────────────────────
+pyaes==1.6.1
+pyasn1==0.6.3
+rsa==4.9.1
+
+# ── Typing / packaging ───────────────────────────────────────────────────────
+typing_extensions==4.15.0
+annotated-types==0.7.0
+packaging==26.2
