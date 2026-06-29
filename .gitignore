@@ -27,7 +27,6 @@ accounts/licenses.json
 
 # ── Build artefacts ──────────────────────────────────────────────────────────
 build/
-dist/
 *.spec
 *.app
 
