@@ -1747,8 +1747,8 @@ async def scrape_group(req: ScrapeRequest):
         error_name = type(e).__name__
         error_msg = str(e)
         if "ChatAdminRequiredError" in error_name:
-            raise HTTPException(status_code=500, detail="Cannot scrape: You must be an ADMIN to see members of this group/channel, or members are hidden.")
-        raise HTTPException(status_code=500, detail=f"Scrape failed ({error_name}): {error_msg}")
+            raise HTTPException(status_code=403, detail="Cannot scrape: You must be an ADMIN to see members of this group/channel, or members are hidden.")
+        raise HTTPException(status_code=400, detail=f"Scrape failed ({error_name}): {error_msg}")
     finally:
         await client.disconnect()
 
